@@ -4,37 +4,49 @@ const auth    = require('../middleware/auth');
 const router  = express.Router();
 
 function genTicket() {
-  return Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2,5).toUpperCase();
+  const now = new Date();
+  const d = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+  const r = Math.random().toString(36).substring(2,6).toUpperCase();
+  return `${d}-${r}`;
 }
 
-// POST /api/fiches
+// POST /api/fiches — Créer une fiche
 router.post('/', auth, async (req, res) => {
   try {
-    const { tirages, entries, total } = req.body;
-    if (!tirages?.length) return res.status(400).json({ message: 'Tiraj obligatwa' });
-    if (!entries?.length)  return res.status(400).json({ message: 'Omwen yon boul obligatwa' });
+    const { tirageId, rows, total, posId, posName } = req.body;
+    if (!tirageId) return res.status(400).json({ message: 'Tiraj obligatwa' });
+    if (!rows?.length) return res.status(400).json({ message: 'Omwen yon boul obligatwa' });
 
     const ticket = genTicket();
-    const now    = new Date().toISOString();
-    const tirage = await db.tirages.findOne({ _id: tirages[0] });
+    const now    = new Date();
+    const tirage = await db.tirages.findOne({ _id: tirageId });
     const agent  = await db.agents.findOne({ _id: req.user.id });
 
     const fiche = await db.fiches.insert({
-      ticket, agentId: req.user.id, tirageId: tirages[0],
-      total, statut: 'actif', dateVente: now,
+      ticket, agentId: req.user.id, tirageId,
+      total: Number(total) || 0,
+      statut: 'actif',
+      dateVente: now,
+      posId: posId || null,
+      posName: posName || null,
     });
 
-    for (const e of entries) {
-      await db.rows.insert({ ficheId: fiche._id, boule: e.boule, type: e.type || 'P0', montant: e.montant });
+    for (const row of rows) {
+      await db.rows.insert({
+        ficheId: fiche._id,
+        boule:   row.boule,
+        type:    row.type || 'P0',
+        mise:    Number(row.mise) || Number(row.montant) || 0,
+      });
     }
 
     res.json({
       ticket, total,
       tirage:    tirage?.nom || 'N/A',
-      agent:     `${agent?.prenom || ''} ${agent?.nom || ''}`.trim(),
+      agent:     `${agent?.prenom||''} ${agent?.nom||''}`.trim(),
       telephone: agent?.telephone,
       date:      now,
-      rows:      entries,
+      rows,
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -43,64 +55,46 @@ router.post('/', auth, async (req, res) => {
 router.get('/mes-fiches', auth, async (req, res) => {
   try {
     const { debut, fin } = req.query;
-    let query = { agentId: req.user.id, statut: { $ne: 'elimine' } };
+    let fiches = await db.fiches.find({ agentId: req.user.id }).sort({ dateVente: -1 });
 
-    const fiches = await db.fiches.find(query).sort({ dateVente: -1 });
-
-    // Filter by date
-    let filtered = fiches;
     if (debut || fin) {
-      filtered = fiches.filter(f => {
+      fiches = fiches.filter(f => {
         const d = new Date(f.dateVente);
-        const debutDate = debut ? new Date(debut.split('/').reverse().join('-')) : null;
-        const finDate   = fin   ? new Date(fin.split('/').reverse().join('-') + 'T23:59:59') : null;
-        if (debutDate && d < debutDate) return false;
-        if (finDate   && d > finDate)   return false;
+        if (debut && d < new Date(debut)) return false;
+        if (fin   && d > new Date(fin + 'T23:59:59')) return false;
         return true;
       });
     }
 
-    // Populate tirages
-    const result = await Promise.all(filtered.map(async f => {
-      const t = await db.tirages.findOne({ _id: f.tirageId });
-      return { ticket: f.ticket, tirage: t?.nom, date: f.dateVente, total: f.total, statut: f.statut };
+    const result = await Promise.all(fiches.slice(0, 100).map(async f => {
+      const rows = await db.rows.find({ ficheId: f._id });
+      const tirage = await db.tirages.findOne({ _id: f.tirageId });
+      return { ...f, rows, tirage: tirage?.nom };
     }));
 
-    res.json({ fiches: result, count: result.length, total: result.reduce((s, f) => s + f.total, 0) });
+    res.json(result);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// GET /api/fiches/:ticket
+// GET /api/fiches/:ticket — Chercher une fiche
 router.get('/:ticket', auth, async (req, res) => {
   try {
     const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
-    if (!fiche) return res.status(404).json({ message: 'Ticket pa trouve' });
-
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    const rows   = await db.rows.find({ ficheId: fiche._id });
     const tirage = await db.tirages.findOne({ _id: fiche.tirageId });
     const agent  = await db.agents.findOne({ _id: fiche.agentId });
-    const rows   = await db.rows.find({ ficheId: fiche._id });
-
-    res.json({
-      ticket:    fiche.ticket,
-      tirage:    tirage?.nom,
-      agent:     `${agent?.prenom || ''} ${agent?.nom || ''}`.trim(),
-      telephone: agent?.telephone,
-      date:      fiche.dateVente,
-      total:     fiche.total,
-      statut:    fiche.statut,
-      rows,
-    });
+    res.json({ ...fiche, rows, tirage, agent });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// DELETE /api/fiches/:ticket
+// DELETE /api/fiches/:ticket — Éliminer une fiche
 router.delete('/:ticket', auth, async (req, res) => {
   try {
-    const fiche = await db.fiches.findOne({ ticket: req.params.ticket, agentId: req.user.id });
-    if (!fiche) return res.status(404).json({ message: 'Ticket pa trouve' });
-    if (fiche.statut === 'elimine') return res.status(400).json({ message: 'Ticket deja elimine' });
-    await db.fiches.update({ _id: fiche._id }, { $set: { statut: 'elimine' } });
-    res.json({ message: 'Ticket elimine avèk siksè' });
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { statut: 'elimine', dateElimine: new Date() } });
+    res.json({ message: 'Fich elimine' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
