@@ -40,6 +40,11 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
+    // Log audit
+    db.logs.insert({ userId: req.user?.id, username: req.user?.username, role: req.user?.role,
+      action: 'Kreye Fich', methode: 'POST', route: '/api/fiches', statut: 'success',
+      details: { ticket, total }, createdAt: new Date() }).catch(()=>{});
+
     res.json({
       ticket, total,
       tirage:    tirage?.nom || 'N/A',

@@ -178,6 +178,9 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
     const { tirage, date, lot1, lot2, lot3 } = req.body;
     if (!tirage || !lot1) return res.status(400).json({ message: 'Tirage ak 1er lot obligatwa' });
     const r = await db.resultats.insert({ tirage, date: date ? new Date(date) : new Date(), lot1, lot2: lot2||'', lot3: lot3||'', createdAt: new Date() });
+    // Broadcast WebSocket — tous les POS reçoivent le résultat en temps réel
+    const broadcast = req.app?.locals?.broadcast;
+    if (broadcast) broadcast({ type: 'nouveau_resultat', tirage, lot1, lot2: lot2||'', lot3: lot3||'', date: r.date, ts: Date.now() });
     res.json(r);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -390,3 +393,33 @@ router.post('/prepaye', auth, adminOnly, async (req, res) => {
 });
 
 module.exports = router;
+
+// ── LOGS AUDIT ────────────────────────────────────────────────
+router.get('/logs', auth, adminOnly, async (req, res) => {
+  try {
+    const { debut, fin, userId, action } = req.query;
+    let logs = await db.logs.find({}).sort({ createdAt: -1 });
+    if (debut) logs = logs.filter(l => new Date(l.createdAt) >= new Date(debut));
+    if (fin)   logs = logs.filter(l => new Date(l.createdAt) <= new Date(fin + 'T23:59:59'));
+    if (userId) logs = logs.filter(l => l.userId === userId);
+    if (action) logs = logs.filter(l => l.action?.toLowerCase().includes(action.toLowerCase()));
+    res.json(logs.slice(0, 500));
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/logs', auth, async (req, res) => {
+  try {
+    const { action, details } = req.body;
+    const log = await db.logs.insert({
+      userId: req.user.id || req.user._id,
+      username: req.user.username,
+      role: req.user.role,
+      action, details,
+      createdAt: new Date(),
+    });
+    // Broadcast log to admin
+    const broadcast = req.app?.locals?.broadcast;
+    if (broadcast) broadcast({ type: 'new_log', log });
+    res.json(log);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});

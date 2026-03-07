@@ -17,7 +17,9 @@ const db = {
   limites:   Datastore.create({ filename: path.join(DATA_DIR, 'limites.db'),   autoload: true }),
   boules:    Datastore.create({ filename: path.join(DATA_DIR, 'boules.db'),    autoload: true }),
   paiements: Datastore.create({ filename: path.join(DATA_DIR, 'paiements.db'), autoload: true }),
-  config:    Datastore.create({ filename: path.join(DATA_DIR, 'config.db'),    autoload: true }),
+  config:       Datastore.create({ filename: path.join(DATA_DIR, 'config.db'),       autoload: true }),
+  logs:         Datastore.create({ filename: path.join(DATA_DIR, 'logs.db'),         autoload: true }),
+  transactions: Datastore.create({ filename: path.join(DATA_DIR, 'transactions.db'), autoload: true }),
 };
 
 // Seed données par défaut

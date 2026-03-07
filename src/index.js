@@ -1,68 +1,98 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
-const cron    = require('node-cron');
+const express  = require('express');
+const cors     = require('cors');
+const cron     = require('node-cron');
+const http     = require('http');
+const { WebSocketServer, WebSocket } = require('ws');
 
 require('./database');
 
-const app  = express();
-const PORT = process.env.PORT || 5000;
+const app    = express();
+const server = http.createServer(app);
+const PORT   = process.env.PORT || 5000;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// ── ROUTES ────────────────────────────────────────────────────
-app.use('/api/auth',     require('./routes/auth'));
-app.use('/api/agent',    require('./routes/agent'));
-app.use('/api/tirages',  require('./routes/tirages'));
-app.use('/api/fiches',   require('./routes/fiches'));
-app.use('/api/rapport',  require('./routes/rapport'));
-app.use('/api/admin',    require('./routes/admin'));
-app.use('/api/resultats', require('./routes/scraper'));
+// ── WEBSOCKET SERVER ──────────────────────────────────────────
+const wss = new WebSocketServer({ server, path: '/ws' });
+const clients = new Set();
 
-// ── HEALTH CHECK ──────────────────────────────────────────────
-app.get('/', (req, res) => res.json({
-  service: 'LA-PROBITE-BORLETTE API',
-  version: '2.0.0',
-  status: 'running'
-}));
-app.get('/api/health', (req, res) => res.json({ ok: true }));
-
-// ── 404 & ERROR HANDLERS ──────────────────────────────────────
-app.use((req, res) => res.status(404).json({ message: 'Route pa trouve' }));
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Erè sèvè entèn' });
+wss.on('connection', (ws) => {
+  clients.add(ws);
+  ws.send(JSON.stringify({ type: 'connected', message: 'LA-PROBITE-BORLETTE WS OK' }));
+  ws.on('close', () => clients.delete(ws));
+  ws.on('error', () => clients.delete(ws));
 });
 
-// ── AUTO-FETCH RÉSULTATS (CRON) ───────────────────────────────
-// Fetch toutes les heures de 10h à 22h
-const scraper = require('./routes/scraper');
-
-async function autoFetch() {
-  try {
-    console.log('🔄 Auto-fetch résultats tirage...');
-    const db = require('./database');
-    const tirages = ['Georgia-Matin','Georgia-Soir','Florida matin','Florida soir','New-york matin','New-york soir'];
-    const latest = {};
-    for (const tirage of tirages) {
-      const results = await db.resultats.find({ tirage }).sort({ date: -1 });
-      if (results.length > 0) latest[tirage] = results[0];
-    }
-    console.log(`✅ ${Object.keys(latest).length} résultats en cache`);
-  } catch (err) {
-    console.error('Auto-fetch error:', err.message);
+function broadcast(data) {
+  const msg = JSON.stringify(data);
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) client.send(msg);
   }
 }
 
-// Cron: toutes les 30 minutes
-cron.schedule('*/30 * * * *', autoFetch);
+app.locals.broadcast = broadcast;
+app.locals.wsClients = clients;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('\n🚀 ================================');
-  console.log(`   LA-PROBITE-BORLETTE API v2.0`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log('================================\n');
-  // Fetch immédiatement au démarrage
-  setTimeout(autoFetch, 3000);
+// ── ROUTES ────────────────────────────────────────────────────
+app.use('/api/auth',      require('./routes/auth'));
+app.use('/api/agent',     require('./routes/agent'));
+app.use('/api/tirages',   require('./routes/tirages'));
+app.use('/api/fiches',    require('./routes/fiches'));
+app.use('/api/rapport',   require('./routes/rapport'));
+app.use('/api/admin',     require('./routes/admin'));
+app.use('/api/resultats', require('./routes/scraper'));
+
+app.get('/api/ws/clients', (req, res) => res.json({ clients: clients.size }));
+app.get('/', (req, res) => res.json({
+  service: 'LA-PROBITE-BORLETTE API', version: '3.0.0',
+  status: 'running', ws_clients: clients.size,
+  scraper: global._lastScraperRun || 'never'
+}));
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.use((req, res) => res.status(404).json({ message: 'Route pa trouve' }));
+app.use((err, req, res, next) => { res.status(500).json({ message: 'Erè sèvè entèn' }); });
+
+// ── SCRAPER AUTOMATIQUE ───────────────────────────────────────
+const { fetchAllResults, saveResults } = require('./routes/scraper');
+
+async function autoScrape() {
+  try {
+    global._lastScraperRun = new Date().toISOString();
+    console.log(`\n[CRON] ${global._lastScraperRun} — Scraping résultats...`);
+    const results = await fetchAllResults();
+    const saved   = await saveResults(results, broadcast);
+    if (saved.length > 0) {
+      console.log(`[CRON] ✅ ${saved.length} nouveaux résultats sauvés et broadcastés`);
+      // Broadcast résumé
+      broadcast({ type: 'scraper_done', count: saved.length, ts: Date.now() });
+    } else {
+      console.log(`[CRON] Pas de nouveaux résultats (${Object.keys(results).length} trouvés déjà en DB)`);
+    }
+  } catch (err) {
+    console.error('[CRON] Erreur scraper:', err.message);
+  }
+}
+
+// Toutes les 15 minutes entre 10h et 23h (heure serveur)
+// Adjust timezone: Haiti = UTC-5, donc 10h Haiti = 15h UTC
+cron.schedule('*/15 10-23 * * *', autoScrape, { timezone: 'America/Port-au-Prince' });
+
+// Aussi à exactement l'heure de chaque tirage connu
+// Georgia: 12:29 / 18:29 | Florida: 13:30 / 18:00 | NY: 14:30 / 22:30
+// Ohio: 12:29 / 19:29 | Chicago: 12:40 / 21:00 | Maryland: 13:00 / 20:00 | TN: 11:00 / 18:00
+const DRAW_TIMES = ['11:01','11:05','12:31','12:35','13:01','13:05','13:32','14:32',
+                    '18:01','18:05','18:31','19:01','20:01','21:01','22:31'];
+for (const time of DRAW_TIMES) {
+  const [h, m] = time.split(':');
+  cron.schedule(`${m} ${h} * * *`, autoScrape, { timezone: 'America/Port-au-Prince' });
+}
+
+server.listen(PORT, () => {
+  console.log(`🚀 LA-PROBITE-BORLETTE API v3 — Port ${PORT}`);
+  console.log(`🔌 WebSocket actif: ws://0.0.0.0:${PORT}/ws`);
+  console.log(`⏰ Scraper: toutes les 15min (10h-23h) + aux heures de tirage`);
+  // Premier scrape au démarrage après 30s
+  setTimeout(autoScrape, 30000);
 });
