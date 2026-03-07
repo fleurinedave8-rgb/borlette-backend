@@ -122,23 +122,43 @@ router.put('/tirages/:id', auth, adminOnly, async (req, res) => {
 // ── FICHES (admin view) ───────────────────────────────────────
 router.get('/fiches', auth, adminOnly, async (req, res) => {
   try {
-    const { debut, fin, agentId } = req.query;
+    const { debut, fin, agentId, posId, tirage } = req.query;
     let fiches = await db.fiches.find(agentId ? { agentId } : {}).sort({ dateVente: -1 });
     if (debut || fin) {
       fiches = fiches.filter(f => {
-        const d = new Date(f.dateVente);
+        const d = new Date(f.dateVente || f.createdAt);
         if (debut && d < new Date(debut)) return false;
         if (fin   && d > new Date(fin + 'T23:59:59')) return false;
         return true;
       });
     }
-    const result = await Promise.all(fiches.slice(0, 200).map(async f => {
-      const t = await db.tirages.findOne({ _id: f.tirageId });
-      const a = await db.agents.findOne({ _id: f.agentId });
+    // Filtre par tirage si spécifié
+    if (tirage && tirage !== 'Tout') {
+      fiches = fiches.filter(f => f.tirage === tirage || f.tirageNom === tirage);
+    }
+    const result = await Promise.all(fiches.slice(0, 500).map(async f => {
+      const t = await db.tirages.findOne({ _id: f.tirageId }).catch(() => null);
+      const a = await db.agents.findOne({ _id: f.agentId }).catch(() => null);
+      const p = await db.pos.findOne({ posId: f.posId || a?.deviceId }).catch(() => null);
+
+      const dateVente = f.dateVente || f.createdAt || new Date();
+      const dt = new Date(dateVente);
+      const pad = n => String(n).padStart(2,'0');
+      const heure = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+
       return {
-        ticket: f.ticket, total: f.total, statut: f.statut,
-        date: f.dateVente, tirage: t?.nom,
-        agent: `${a?.prenom||''} ${a?.nom||''}`.trim(),
+        ticket:   f.ticket,
+        total:    f.total || 0,
+        vente:    f.total || 0,
+        statut:   f.statut,
+        date:     dateVente,
+        heure:    heure,
+        tirage:   t?.nom || f.tirage || f.tirageNom || '—',
+        agent:    `${a?.prenom||''} ${a?.nom||''}`.trim() || '—',
+        posId:    f.posId || a?.deviceId || '—',
+        posNom:   p?.nom || a?.username || '—',
+        succursale: p?.succursale || a?.succursale || '—',
+        rows:     f.rows || [],
       };
     }));
     res.json({ fiches: result, count: result.length });
@@ -354,6 +374,18 @@ router.get('/pos-connectes', auth, async (req, res) => {
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
     const connectes = await db.pos.find({ lastSeen: { $gte: fiveMinAgo }, actif: true });
     res.json({ count: connectes.length, pos: connectes });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── PRÉ-PAYER UN AGENT ────────────────────────────────────────
+router.post('/prepaye', auth, adminOnly, async (req, res) => {
+  try {
+    const { agentId, montant, jours, type } = req.body;
+    if (!agentId || !montant) return res.status(400).json({ message: 'agentId ak montant obligatwa' });
+    const expiration = new Date(Date.now() + (jours || 30) * 24 * 60 * 60 * 1000);
+    await db.agents.update({ _id: agentId }, { $set: { prepaye: true, montantPrepaye: montant, prepayeExpire: expiration, prepayeType: type || 'abonnement' } });
+    await db.transactions.insert({ agentId, type: 'prepaye', montant: parseFloat(montant), jours: jours || 30, date: new Date(), note: `Prépaiement ${type} ${jours}j` });
+    res.json({ message: 'Prépaiement aktivé' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
