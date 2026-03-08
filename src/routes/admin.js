@@ -14,21 +14,99 @@ function adminOnly(req, res, next) {
 // ── STATS ─────────────────────────────────────────────────────
 router.get('/stats', auth, async (req, res) => {
   try {
+    const now   = new Date();
     const today = new Date(); today.setHours(0,0,0,0);
-    const agents     = await db.agents.count({ role: 'agent', actif: true });
-    const pos        = await db.pos.count({ actif: true });
-    const allFiches  = await db.fiches.find({ statut: { $ne: 'elimine' } });
-    const todayFiches= allFiches.filter(f => new Date(f.dateVente) >= today);
-    const totalVente = allFiches.reduce((s, f) => s + (f.total||0), 0);
-    const todayVente = todayFiches.reduce((s, f) => s + (f.total||0), 0);
-    // POS connectés (actifs dans les 5 dernières minutes)
-    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const posConnectes = await db.pos.count({ lastSeen: { $gte: fiveMinAgo } });
+    const weekAgo = new Date(Date.now() - 7*24*60*60*1000);
+    const fiveMinAgo = new Date(Date.now() - 5*60*1000);
+
+    // Agents & POS
+    const allAgents  = await db.agents.find({});
+    const allPos     = await db.pos.find({});
+    const agents     = allAgents.filter(a => a.role==='agent' && a.actif);
+    const posActifs  = allPos.filter(p => p.actif);
+    const posOnline  = allPos.filter(p => p.lastSeen && new Date(p.lastSeen) >= fiveMinAgo);
+
+    // Fiches
+    const allFiches    = await db.fiches.find({});
+    const actifFiches  = allFiches.filter(f => f.statut !== 'elimine');
+    const todayFiches  = actifFiches.filter(f => new Date(f.dateVente) >= today);
+    const weekFiches   = actifFiches.filter(f => new Date(f.dateVente) >= weekAgo);
+    const gagnantFiches= allFiches.filter(f => f.statut === 'gagnant');
+    const elimFiches   = allFiches.filter(f => f.statut === 'elimine');
+
+    // Ventes
+    const venteTotal   = actifFiches.reduce((s,f) => s+(f.total||0), 0);
+    const venteJodi    = todayFiches.reduce((s,f) => s+(f.total||0), 0);
+    const venteSemaine = weekFiches.reduce((s,f)  => s+(f.total||0), 0);
+    const totalGagne   = gagnantFiches.reduce((s,f)=> s+(f.montantGagne||0), 0);
+
+    // Commission mwayen
+    const agentsData = await db.agents.find({ role:'agent' });
+    const avgPct = agentsData.length > 0
+      ? agentsData.reduce((s,a) => s+(a.agentPct||10), 0) / agentsData.length
+      : 10;
+    const commJodi = venteJodi * avgPct / 100;
+
+    // Vant pa tiraj jodi a
+    const tirages = await db.tirages.find({});
+    const ventePaTiraj = [];
+    for (const t of tirages) {
+      const tf = todayFiches.filter(f => f.tirageId === t._id);
+      if (tf.length > 0) {
+        ventePaTiraj.push({ nom: t.nom, fiches: tf.length, vente: tf.reduce((s,f)=>s+(f.total||0),0) });
+      }
+    }
+    ventePaTiraj.sort((a,b) => b.vente - a.vente);
+
+    // Top 5 ajan pa vant jodi a
+    const agentMap = {};
+    for (const f of todayFiches) {
+      if (!agentMap[f.agentId]) agentMap[f.agentId] = { fiches:0, vente:0 };
+      agentMap[f.agentId].fiches++;
+      agentMap[f.agentId].vente += f.total||0;
+    }
+    const topAgents = await Promise.all(
+      Object.entries(agentMap)
+        .sort((a,b) => b[1].vente - a[1].vente)
+        .slice(0,5)
+        .map(async ([id, data]) => {
+          const a = await db.agents.findOne({ _id: id });
+          return { nom: `${a?.prenom||''} ${a?.nom||''}`.trim(), ...data, pct: a?.agentPct||10 };
+        })
+    );
+
+    // Dènye rezilta
+    const denniResulat = await db.resultats.find({}).sort({ createdAt:-1 });
+    const latestRes = {};
+    denniResulat.slice(0,20).forEach(r => {
+      if (!latestRes[r.tirage]) latestRes[r.tirage] = r;
+    });
+
     res.json({
-      totalAgents: agents, totalPos: pos, posConnectes,
-      totalFiches: allFiches.length, fichesAujourdhui: todayFiches.length,
-      venteTotal: totalVente.toFixed(2), venteAujourdhui: todayVente.toFixed(2),
-      commission: (totalVente * 0.10).toFixed(2),
+      // Agents & POS
+      totalAgents: agents.length,
+      totalPos: posActifs.length,
+      posOnline: posOnline.length,
+      totalPos_all: allPos.length,
+
+      // Fiches
+      totalFiches: actifFiches.length,
+      fichesJodi: todayFiches.length,
+      fichesSemaine: weekFiches.length,
+      fichesGagnant: gagnantFiches.length,
+      fichesElimine: elimFiches.length,
+
+      // Ventes
+      venteTotal: venteTotal.toFixed(2),
+      venteJodi: venteJodi.toFixed(2),
+      venteSemaine: venteSemaine.toFixed(2),
+      totalGagne: totalGagne.toFixed(2),
+      commJodi: commJodi.toFixed(2),
+
+      // Détail
+      ventePaTiraj,
+      topAgents,
+      latestResultats: Object.values(latestRes),
     });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -299,9 +377,38 @@ router.get('/pos', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+
+// ── MESSAGE ADMIN POU POS ─────────────────────────────────────
+// GET /api/admin/pos/message — retounen mesaj + tiraj pou yon POS
+router.get('/pos/message', auth, async (req, res) => {
+  try {
+    const posRecord = await db.pos.findOne({
+      $or: [
+        { deviceId: req.user.deviceId },
+        { agentUsername: req.user.username },
+        { agentId: req.user.id },
+      ]
+    });
+    const tirages = await db.tirages.find({ actif: true });
+    const resultats = await db.resultats.find({}).sort({ createdAt: -1 });
+
+    // Dènye rezilta pa tiraj
+    const latest = {};
+    resultats.slice(0, 50).forEach(r => {
+      if (!latest[r.tirage]) latest[r.tirage] = r;
+    });
+
+    res.json({
+      message:  posRecord?.messageAdmin || null,
+      tirages:  tirages.map(t => ({ nom: t.nom, actif: t.actif })),
+      resultats: Object.values(latest).slice(0, 14),
+    });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.post('/pos', auth, adminOnly, async (req, res) => {
   try {
-    const { posId, nom, adresse, telephone, agentId, agentUsername, succursale, prime, agentPct, supPct, credit, prepaye, montantPrepaye, tete } = req.body;
+    const { posId, nom, adresse, telephone, agentId, agentUsername, succursale, prime, agentPct, supPct, credit, prepaye, montantPrepaye, tete, messageAdmin } = req.body;
     if (!posId || !nom) return res.status(400).json({ message: 'POS ID ak non obligatwa' });
     const exists = await db.pos.findOne({ posId });
     if (exists) return res.status(400).json({ message: 'POS ID deja enregistre' });
@@ -319,6 +426,7 @@ router.post('/pos', auth, adminOnly, async (req, res) => {
         ligne3: telephone || '',
         ligne4: 'Fich sa valid pou 90 jou',
       },
+      messageAdmin: messageAdmin || '',
       actif: true, online: false,
       createdAt: new Date(),
     });
