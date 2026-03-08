@@ -276,17 +276,24 @@ router.get('/pos', auth, async (req, res) => {
 
 router.post('/pos', auth, adminOnly, async (req, res) => {
   try {
-    const { posId, nom, adresse, telephone, agentId, succursale, prime, agentPct, supPct, credit, prepaye, montantPrepaye } = req.body;
+    const { posId, nom, adresse, telephone, agentId, agentUsername, succursale, prime, agentPct, supPct, credit, prepaye, montantPrepaye, tete } = req.body;
     if (!posId || !nom) return res.status(400).json({ message: 'POS ID ak non obligatwa' });
     const exists = await db.pos.findOne({ posId });
     if (exists) return res.status(400).json({ message: 'POS ID deja enregistre' });
     const p = await db.pos.insert({
-      posId, nom, adresse, telephone, agentId,
+      posId, nom, adresse, telephone, agentId, agentUsername,
       succursale, prime: prime||'60|20|10',
       agentPct: agentPct||0, supPct: supPct||0,
       credit: credit||'Illimité',
       prepaye: prepaye||false,
       montantPrepaye: montantPrepaye||0,
+      // Tete fich pou enpresyon (ligne1-4)
+      tete: tete || {
+        ligne1: nom || 'LA-PROBITE-BORLETTE',
+        ligne2: adresse || '',
+        ligne3: telephone || '',
+        ligne4: 'Fich sa valid pou 90 jou',
+      },
       actif: true, online: false,
       createdAt: new Date(),
     });
