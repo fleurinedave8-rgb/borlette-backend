@@ -1,3 +1,4 @@
+const { calculerGagnants } = require('./scraper');
 const express = require('express');
 const bcrypt  = require('bcryptjs');
 const db      = require('../database');
@@ -112,6 +113,20 @@ router.get('/superviseurs', auth, async (req, res) => {
 });
 
 // ── TIRAGES ───────────────────────────────────────────────────
+
+// ── FÈMTI / OUVÈTI TIRAJ ─────────────────────────────────────
+router.put('/tirages/:id/toggle', auth, adminOnly, async (req, res) => {
+  try {
+    const t = await db.tirages.findOne({ _id: req.params.id });
+    if (!t) return res.status(404).json({ message: 'Tiraj pa jwenn' });
+    await db.tirages.update({ _id: req.params.id }, { $set: { actif: !t.actif, updatedAt: new Date() } });
+    const action = t.actif ? 'fèmen' : 'ouvri';
+    console.log(`[TIRAJ] ${t.nom} ${action}`);
+    res.json({ message: `Tiraj ${action}`, actif: !t.actif });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/tirages/:id (modifier)
 router.put('/tirages/:id', auth, adminOnly, async (req, res) => {
   try {
     await db.tirages.update({ _id: req.params.id }, { $set: req.body });
@@ -181,7 +196,17 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
     // Broadcast WebSocket — tous les POS reçoivent le résultat en temps réel
     const broadcast = req.app?.locals?.broadcast;
     if (broadcast) broadcast({ type: 'nouveau_resultat', tirage, lot1, lot2: lot2||'', lot3: lot3||'', date: r.date, ts: Date.now() });
-    res.json(r);
+
+    // ── Kalkil gagnant otomatik ───────────────────────────────
+    try {
+      const { calculerGagnants } = require('./scraper');
+      const dateStr = date || new Date().toISOString().split('T')[0];
+      const nb = await calculerGagnants(tirage, lot1, lot2, lot3, dateStr);
+      res.json({ ...r, gagnants: nb || 0 });
+    } catch(e) {
+      console.error('[GAGNANT]', e.message);
+      res.json(r);
+    }
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 

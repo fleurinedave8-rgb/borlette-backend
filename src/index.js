@@ -11,7 +11,14 @@ const app    = express();
 const server = http.createServer(app);
 const PORT   = process.env.PORT || 5000;
 
-app.use(cors({ origin: '*' }));
+app.use(cors({
+  origin: [
+    'https://borlette-web.vercel.app',
+    'http://localhost:3000',
+    process.env.FRONTEND_URL || '*',
+  ].filter(Boolean),
+  credentials: true,
+}));
 app.use(express.json());
 
 // ── WEBSOCKET SERVER ──────────────────────────────────────────
@@ -36,7 +43,7 @@ app.locals.broadcast = broadcast;
 app.locals.wsClients = clients;
 
 // ── ROUTES ────────────────────────────────────────────────────
-app.use('/api/auth',      require('./routes/auth'));
+app.use('/api/auth',      rateLimit(20, 60000), require('./routes/auth')); // 20 koneksyon/minit
 app.use('/api/agent',     require('./routes/agent'));
 app.use('/api/tirages',   require('./routes/tirages'));
 app.use('/api/fiches',    require('./routes/fiches'));

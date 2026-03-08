@@ -436,7 +436,89 @@ router.get('/status', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+
+// ═══════════════════════════════════════════════════════════
+//  CALCUL GAGNANT OTOMATIK
+// ═══════════════════════════════════════════════════════════
+async function calculerGagnants(tirageNom, lot1, lot2, lot3, date) {
+  try {
+    const tirage = await db.tirages.findOne({ nom: tirageNom });
+    if (!tirage) { console.log(`[GAGNANT] Tiraj "${tirageNom}" pa jwenn`); return 0; }
+
+    const today = date || new Date().toISOString().split('T')[0];
+    const debut = new Date(today);
+    const fin   = new Date(today + 'T23:59:59');
+
+    // Chèche tout fiches aktif pou tiraj sa a
+    let fiches = await db.fiches.find({ tirageId: tirage._id, statut: 'actif' });
+    fiches = fiches.filter(f => {
+      const d = new Date(f.dateVente);
+      return d >= debut && d <= fin;
+    });
+
+    const primesAll = await db.primes.find({});
+    const primeMap = {};
+    for (const p of primesAll) primeMap[p.type] = p;
+
+    const lots = [lot1, lot2, lot3].filter(Boolean).map(l => String(l).padStart(2,'0'));
+    let totalGagnants = 0;
+
+    for (const fiche of fiches) {
+      const rows = await db.rows.find({ ficheId: fiche._id });
+      let montantGagne = 0;
+      const rowsGagnant = [];
+
+      for (const row of rows) {
+        const boule = String(row.boule).padStart(2,'0');
+        const type  = row.type || 'P0';
+        const mise  = Number(row.mise) || 0;
+        const pos   = lots.indexOf(boule);
+        if (pos === -1) continue;
+
+        const prime = primeMap[type];
+        if (!prime) continue;
+
+        let mult = 0;
+        if (type === 'P0') {
+          mult = pos===0 ? (prime.prime1||0) : pos===1 ? (prime.prime2||0) : (prime.prime3||0);
+        } else if (type === 'P1' && pos === 0) { mult = prime.prime1||0; }
+        else if (type === 'P2' && pos === 1)   { mult = prime.prime1||0; }
+        else if (type === 'P3' && pos === 2)   { mult = prime.prime1||0; }
+        else if (type === 'MAR' && lots.length >= 2 && pos <= 1) { mult = prime.prime1||0; }
+        else if (type.startsWith('L4') && pos === 0) { mult = prime.prime1||0; }
+
+        if (mult > 0) {
+          const gain = mise * mult;
+          montantGagne += gain;
+          rowsGagnant.push({ boule, type, mise, gain, mult });
+        }
+      }
+
+      if (montantGagne > 0) {
+        await db.fiches.update({ _id: fiche._id }, {
+          $set: { statut:'gagnant', montantGagne, lotsGagnants:lots, dateCalcul:new Date(), rowsGagnant }
+        });
+        const agent = await db.agents.findOne({ _id: fiche.agentId });
+        if (agent) {
+          await db.agents.update({ _id: fiche.agentId }, { $set: { balance: (agent.balance||0) + montantGagne } });
+        }
+        totalGagnants++;
+        console.log(`[GAGNANT] ✅ Ticket ${fiche.ticket} — ${montantGagne} HTG`);
+      }
+    }
+
+    // Fèmen tiraj la
+    await db.tirages.update({ _id: tirage._id }, { $set: { actif: false, dateFermeture: new Date() } });
+    console.log(`[GAGNANT] ${tirageNom}: ${totalGagnants} gagnant(s) — Tiraj fèmen`);
+    return totalGagnants;
+  } catch (err) {
+    console.error('[GAGNANT] Erè:', err.message);
+    return 0;
+  }
+}
+
 module.exports = router;
+module.exports.calculerGagnants = calculerGagnants;
 module.exports.fetchAllResults  = fetchAllResults;
 module.exports.saveResults      = saveResults;
 module.exports.getLatestResults = getLatestResults;

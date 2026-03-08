@@ -24,7 +24,7 @@ router.get('/partiel', auth, async (req, res) => {
     });
 
     const vente = fiches.reduce((s, f) => s + (f.total||0), 0);
-    res.json({ date, fichesVendu: fiches.length, vente: vente.toFixed(2), commision: (vente*0.10).toFixed(2) });
+    res.json({ date, fichesVendu: fiches.length, vente: vente.toFixed(2) });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
@@ -42,7 +42,7 @@ router.get('/tirage', auth, async (req, res) => {
     }
 
     const vente = fiches.reduce((s, f) => s + (f.total||0), 0);
-    res.json({ debut, fin, tirage: tirage||'tout', fichesVendu: fiches.length, vente: vente.toFixed(2), commision: (vente*0.10).toFixed(2) });
+    res.json({ debut, fin, tirage: tirage||'tout', fichesVendu: fiches.length, vente: vente.toFixed(2) });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
@@ -155,10 +155,12 @@ router.get('/journalier', auth, async (req, res) => {
 
     const agents = await Promise.all(Object.entries(agentMap).map(async ([id, data]) => {
       const a = await db.agents.findOne({ _id: id });
-      return { agent: `${a?.prenom||''} ${a?.nom||''}`.trim(), ...data, commission: (data.vente*0.10).toFixed(2) };
+      const pct = (a?.agentPct || 10) / 100;
+      return { agent: `${a?.prenom||''} ${a?.nom||''}`.trim(), ...data, commission: (data.vente*pct).toFixed(2), pct: a?.agentPct||10 };
     }));
 
-    res.json({ date: today, fichesVendu: fiches.length, vente: vente.toFixed(2), commission: (vente*0.10).toFixed(2), agents });
+    const commTotal = agents.reduce((s,a) => s + parseFloat(a.commission||0), 0);
+    res.json({ date: today, fichesVendu: fiches.length, vente: vente.toFixed(2), commission: commTotal.toFixed(2), agents });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 

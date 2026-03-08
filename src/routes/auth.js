@@ -4,7 +4,8 @@ const jwt     = require('jsonwebtoken');
 const db      = require('../database');
 const router  = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'laprobite2026secretkey';
+const auth = require('../middleware/auth');
+const JWT_SECRET = auth.SECRET || process.env.JWT_SECRET || 'laprobite2026secretkey';
 
 // ══════════════════════════════════════════════════════════════
 //  POST /api/auth/login
