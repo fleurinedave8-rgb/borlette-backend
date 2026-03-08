@@ -325,6 +325,16 @@ router.put('/pos/:id/toggle', auth, adminOnly, async (req, res) => {
 });
 
 // ── PAIEMENT ──────────────────────────────────────────────────
+router.get('/paiement', auth, adminOnly, async (req, res) => {
+  try {
+    const { agentId, debut, fin } = req.query;
+    let trans = await db.transactions.find(agentId ? { agentId } : {}).sort({ createdAt: -1 });
+    if (debut) trans = trans.filter(t => new Date(t.createdAt) >= new Date(debut));
+    if (fin)   trans = trans.filter(t => new Date(t.createdAt) <= new Date(fin + 'T23:59:59'));
+    res.json(trans.slice(0, 200));
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.post('/paiement', auth, adminOnly, async (req, res) => {
   try {
     const { agentId, type, montant, note } = req.body;
@@ -399,7 +409,7 @@ router.post('/prepaye', auth, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-module.exports = router;
+
 
 // ── LOGS AUDIT ────────────────────────────────────────────────
 router.get('/logs', auth, adminOnly, async (req, res) => {
@@ -428,5 +438,86 @@ router.post('/logs', auth, async (req, res) => {
     const broadcast = req.app?.locals?.broadcast;
     if (broadcast) broadcast({ type: 'new_log', log });
     res.json(log);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════
+//  SUCCURSAL CRUD
+// ══════════════════════════════════════════════════════════════
+router.get('/succursales', auth, async (req, res) => {
+  try {
+    const list = await db.succursales.find({}).sort({ createdAt: -1 });
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/succursales', auth, adminOnly, async (req, res) => {
+  try {
+    const { nom, limite, prime, limiteGain, message, mariage, bank } = req.body;
+    if (!nom) return res.status(400).json({ message: 'Non succursal obligatwa' });
+    const exists = await db.succursales.findOne({ nom: nom.trim() });
+    if (exists) return res.status(400).json({ message: 'Succursal sa a deja egziste' });
+    const s = await db.succursales.insert({
+      nom: nom.trim(), limite: limite || 'Illimité',
+      prime: prime || '60/20/10', limiteGain: limiteGain || 'Illimité',
+      message: message || '', mariage: mariage || false,
+      bank: bank || '', actif: true, createdAt: new Date(),
+    });
+    res.json(s);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/succursales/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.succursales.update({ _id: req.params.id }, { $set: { ...req.body, updatedAt: new Date() } });
+    res.json({ message: 'Succursal mete ajou' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/succursales/:id/toggle', auth, adminOnly, async (req, res) => {
+  try {
+    const s = await db.succursales.findOne({ _id: req.params.id });
+    if (!s) return res.status(404).json({ message: 'Pa jwenn' });
+    await db.succursales.update({ _id: req.params.id }, { $set: { actif: !s.actif } });
+    res.json({ actif: !s.actif });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.delete('/succursales/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.succursales.remove({ _id: req.params.id });
+    res.json({ message: 'Succursal efase' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+module.exports = router;
+
+// ══════════════════════════════════════════════════════════════
+//  DOLEANCES
+// ══════════════════════════════════════════════════════════════
+router.get('/doleances', auth, adminOnly, async (req, res) => {
+  try {
+    const list = await db.doleances.find({}).sort({ createdAt: -1 });
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/doleances', async (req, res) => {
+  try {
+    const { sujet, nom, telephone, email, description, type } = req.body;
+    if (!sujet || !description) return res.status(400).json({ message: 'Sujet ak deskripsyon obligatwa' });
+    const d = await db.doleances.insert({
+      sujet, nom: nom || 'Anonyme', telephone: telephone || '',
+      email: email || '', description, type: type || 'doleance',
+      statut: 'nouveau', createdAt: new Date(),
+    });
+    res.json(d);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/doleances/:id/statut', auth, adminOnly, async (req, res) => {
+  try {
+    await db.doleances.update({ _id: req.params.id }, { $set: { statut: req.body.statut, updatedAt: new Date() } });
+    res.json({ message: 'Statut mete ajou' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

@@ -20,6 +20,8 @@ const db = {
   config:       Datastore.create({ filename: path.join(DATA_DIR, 'config.db'),       autoload: true }),
   logs:         Datastore.create({ filename: path.join(DATA_DIR, 'logs.db'),         autoload: true }),
   transactions: Datastore.create({ filename: path.join(DATA_DIR, 'transactions.db'), autoload: true }),
+  succursales:  Datastore.create({ filename: path.join(DATA_DIR, 'succursales.db'),  autoload: true }),
+  doleances:    Datastore.create({ filename: path.join(DATA_DIR, 'doleances.db'),    autoload: true }),
 };
 
 // Seed données par défaut

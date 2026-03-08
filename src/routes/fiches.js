@@ -103,4 +103,33 @@ router.delete('/:ticket', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+
+// PUT /api/fiches/approuver/:ticket
+router.put('/approuver/:ticket', auth, async (req, res) => {
+  try {
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    await db.fiches.update(
+      { ticket: req.params.ticket },
+      { $set: { statut: 'elimine', dateElimine: new Date(), approuveePar: req.user.username } }
+    );
+    db.logs.insert({ userId: req.user?.id, username: req.user?.username,
+      action: 'Aprouve Eliminasyon', details: { ticket: req.params.ticket }, createdAt: new Date() }).catch(()=>{});
+    res.json({ message: 'Eliminasyon aprouve' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/fiches/refuser/:ticket
+router.put('/refuser/:ticket', auth, async (req, res) => {
+  try {
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    await db.fiches.update(
+      { ticket: req.params.ticket },
+      { $set: { demandeElimination: false, refusePar: req.user.username } }
+    );
+    res.json({ message: 'Demann refize' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 module.exports = router;
