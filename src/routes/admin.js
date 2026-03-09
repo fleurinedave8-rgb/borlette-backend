@@ -448,6 +448,19 @@ router.delete('/pos/:id', auth, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+// ── MODIFYE LIMITE + KREDI AJAN ─────────────────────────────
+router.put('/agents/:id/limite', auth, adminOnly, async (req, res) => {
+  try {
+    const { limiteGain, credit, agentPct } = req.body;
+    const update = {};
+    if (limiteGain !== undefined) update.limiteGain = limiteGain;
+    if (credit     !== undefined) update.credit     = credit;
+    if (agentPct   !== undefined) update.agentPct   = parseFloat(agentPct) || 0;
+    await db.agents.update({ _id: req.params.id }, { $set: update });
+    res.json({ message: 'Limite mete ajou', ...update });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.put('/pos/:id/toggle', auth, adminOnly, async (req, res) => {
   try {
     const p = await db.pos.findOne({ _id: req.params.id });

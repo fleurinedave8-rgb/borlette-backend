@@ -105,6 +105,23 @@ router.post('/', auth, async (req, res) => {
       details: { ticket, total }, createdAt: new Date()
     }).catch(()=>{});
 
+    // Broadcast tan reyèl pou dashboard admin
+    const broadcast = req.app?.locals?.broadcast;
+    if (broadcast) {
+      const agentInfo = await db.agents.findOne({ _id: req.user.id }).catch(() => null);
+      broadcast({
+        type: 'nouvelle_fiche',
+        ticket, total: Number(total) || 0,
+        tirage: tirage?.nom || tirageId,
+        agent: `${agentInfo?.prenom||''} ${agentInfo?.nom||''}`.trim(),
+        posId: posId || agentInfo?.deviceId || '',
+        heure: new Date().toLocaleTimeString('fr', { hour:'2-digit', minute:'2-digit' }),
+        date: new Date().toISOString(),
+        rows: rows || [],
+        statut: 'actif',
+      });
+    }
+
     res.json({
       ticket, total,
       tirage:    tirage?.nom || 'N/A',
