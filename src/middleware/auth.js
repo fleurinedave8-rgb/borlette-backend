@@ -3,9 +3,10 @@ const jwt = require('jsonwebtoken');
 // ⚠️ KRITIK: JWT_SECRET dwe nan Railway env vars
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.error('⚠️  ATENSIYON: JWT_SECRET pa defini nan env vars! Itilize valè defòlt — CHANJE SA NAN PWODUKSYON!');
+  console.warn('⚠️  JWT_SECRET manke nan env vars — itilize valè defòlt stab. Ajoute JWT_SECRET nan Railway!');
 }
-const SECRET = JWT_SECRET || 'laprobite_' + Math.random().toString(36).slice(2) + '_2026';
+// ENPÒTAN: Sèvi yon valè STAB (pa random) pou token yo ret valid apre redémarrage
+const SECRET = JWT_SECRET || 'laprobite_2026_xK9mN7qR4_STABLE_DEFAULT';
 
 module.exports = (req, res, next) => {
   const header = req.headers.authorization;
