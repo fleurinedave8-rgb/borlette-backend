@@ -27,6 +27,19 @@ const db = {
 // Seed données par défaut
 async function seed() {
   try {
+    // SuperAdmin
+    const superadmin = await db.agents.findOne({ username: 'superadmin' });
+    if (!superadmin) {
+      await db.agents.insert({
+        nom: 'Super', prenom: 'Admin', username: 'superadmin',
+        password: bcrypt.hashSync('super2026!', 10),
+        role: 'superadmin', actif: true, balance: 0,
+        credit: 'Illimité', limiteGain: 'Illimité',
+        createdAt: new Date(),
+      });
+      console.log('✅ SuperAdmin créé: superadmin/super2026!');
+    }
+
     // Admin
     const admin = await db.agents.findOne({ username: 'admin' });
     if (!admin) {

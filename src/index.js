@@ -57,13 +57,16 @@ const rateLimit = (max, windowMs) => (req, res, next) => {
 setInterval(() => { const c = Date.now()-60000; rateLimitMap.forEach((v,k)=>{ if(v.start<c) rateLimitMap.delete(k); }); }, 600000);
 
 // ── ROUTES ────────────────────────────────────────────────────
-app.use('/api/auth',      rateLimit(20, 60000), require('./routes/auth')); // 20 koneksyon/minit
-app.use('/api/agent',     require('./routes/agent'));
-app.use('/api/tirages',   require('./routes/tirages'));
-app.use('/api/fiches',    require('./routes/fiches'));
-app.use('/api/rapport',   require('./routes/rapport'));
-app.use('/api/admin',     require('./routes/admin'));
-app.use('/api/resultats', require('./routes/scraper'));
+app.use('/api/auth',       rateLimit(20, 60000), require('./routes/auth')); // 20 koneksyon/minit
+app.use('/api/agent',      require('./routes/agent'));
+app.use('/api/tirages',    require('./routes/tirages'));
+app.use('/api/fiches',     require('./routes/fiches'));
+app.use('/api/rapport',    require('./routes/rapport'));
+app.use('/api/admin',      require('./routes/admin'));
+app.use('/api/resultats',  require('./routes/scraper'));
+app.use('/api/gagnant',    require('./routes/gagnant'));    // ✅ Kalkil gagnant otomatik
+app.use('/api/superadmin', require('./routes/superadmin')); // ✅ Multi-tenant Super Admin
+app.use('/api/licence',    require('./routes/licence'));    // ✅ Lisans POS
 
 app.get('/api/ws/clients', (req, res) => res.json({ clients: clients.size }));
 app.get('/', (req, res) => res.json({

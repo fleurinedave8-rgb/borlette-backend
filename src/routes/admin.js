@@ -284,21 +284,92 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
   try {
     const { tirage, date, lot1, lot2, lot3 } = req.body;
     if (!tirage || !lot1) return res.status(400).json({ message: 'Tirage ak 1er lot obligatwa' });
-    const r = await db.resultats.insert({ tirage, date: date ? new Date(date) : new Date(), lot1, lot2: lot2||'', lot3: lot3||'', createdAt: new Date() });
-    // Broadcast WebSocket — tous les POS reçoivent le résultat en temps réel
-    const broadcast = req.app?.locals?.broadcast;
-    if (broadcast) broadcast({ type: 'nouveau_resultat', tirage, lot1, lot2: lot2||'', lot3: lot3||'', date: r.date, ts: Date.now() });
 
-    // ── Kalkil gagnant otomatik ───────────────────────────────
-    try {
-      const { calculerGagnants } = require('./scraper');
-      const dateStr = date || new Date().toISOString().split('T')[0];
-      const nb = await calculerGagnants(tirage, lot1, lot2, lot3, dateStr);
-      res.json({ ...r, gagnants: nb || 0 });
-    } catch(e) {
-      console.error('[GAGNANT]', e.message);
-      res.json(r);
+    // Jwenn tiraj pa nom
+    const tirageDoc = await db.tirages.findOne({ nom: tirage });
+
+    // Sove rezilta
+    const r = await db.resultats.insert({
+      tirage, tirageId: tirageDoc?._id || null,
+      date: date ? new Date(date) : new Date(),
+      lot1, lot2: lot2||'', lot3: lot3||'',
+      createdAt: new Date()
+    });
+
+    // ── KALKIL GAGNANT OTOMATIK ───────────────────────────────
+    let totalGagnant = 0;
+    let totalGain    = 0;
+    const broadcast  = req.app?.locals?.broadcast;
+
+    if (tirageDoc) {
+      try {
+        const { kalkilRow } = require('./gagnant');
+        const primesList = await db.primes.find({});
+        const primesMap  = {};
+        for (const p of primesList) primesMap[p.type] = p;
+
+        const fiches = await db.fiches.find({ tirageId: tirageDoc._id, statut: 'actif' });
+
+        for (const fiche of fiches) {
+          const rows = await db.rows.find({ ficheId: fiche._id });
+          let fichGagne = false, fichGain = 0;
+
+          for (const row of rows) {
+            const kalkil = kalkilRow(row, { lot1, lot2: lot2||'', lot3: lot3||'' }, primesMap);
+            if (kalkil.gagne) {
+              fichGagne = true;
+              fichGain += kalkil.gain;
+              await db.rows.update({ _id: row._id }, {
+                $set: { gagne: true, gain: kalkil.gain, description: kalkil.description }
+              });
+            }
+          }
+
+          if (fichGagne) {
+            await db.fiches.update({ _id: fiche._id }, {
+              $set: { statut: 'gagnant', gainTotal: fichGain, dateGagnant: new Date(),
+                lot1, lot2: lot2||'', lot3: lot3||'', resultatId: r._id }
+            });
+
+            // Komisyon ajan
+            const agent = await db.agents.findOne({ _id: fiche.agentId });
+            if (agent) {
+              const comm = fiche.total * ((agent.agentPct || 10) / 100);
+              await db.agents.update({ _id: agent._id }, { $set: { balance: (agent.balance||0) + comm } });
+            }
+
+            totalGagnant++;
+            totalGain += fichGain;
+
+            // Notifye POS — fich gagnant
+            if (broadcast) broadcast({
+              type: 'fich_gagnant', ticket: fiche.ticket,
+              tirage, gain: fichGain, lot1, lot2: lot2||'', lot3: lot3||'', ts: Date.now()
+            });
+          }
+        }
+
+        console.log(`[GAGNANT] ${tirage}: ${totalGagnant} gagnant, ${totalGain.toFixed(2)} HTG`);
+      } catch (ge) {
+        console.error('[GAGNANT ERROR]', ge.message);
+      }
     }
+
+    // Broadcast WebSocket — tous les POS & web reçoivent le résultat
+    if (broadcast) broadcast({
+      type: 'nouveau_resultat', tirage, lot1, lot2: lot2||'', lot3: lot3||'',
+      totalGagnant, totalGain: totalGain.toFixed(2),
+      date: r.date, ts: Date.now()
+    });
+
+    await db.logs.insert({
+      userId: req.user?.id, username: req.user?.username, role: req.user?.role,
+      action: 'Antre Rezilta', details: { tirage, lot1, lot2, lot3, totalGagnant, totalGain },
+      createdAt: new Date()
+    });
+
+    res.json({ ...r, totalGagnant, totalGain: totalGain.toFixed(2),
+      message: totalGagnant > 0 ? `✅ ${totalGagnant} fich gagnant kalkile` : '✅ Rezilta antre' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
