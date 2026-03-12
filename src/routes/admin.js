@@ -722,8 +722,6 @@ router.delete('/succursales/:id', auth, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-module.exports = router;
-
 // ══════════════════════════════════════════════════════════════
 //  DOLEANCES
 // ══════════════════════════════════════════════════════════════
@@ -753,3 +751,95 @@ router.put('/doleances/:id/statut', auth, adminOnly, async (req, res) => {
     res.json({ message: 'Statut mete ajou' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
+
+// ─── wout ki te gen module.exports anba yo — yo transfere nan fen ───
+
+// ── GET ROWS POU YON FICH ─────────────────────────────────────
+router.get('/fiches/:ticket/rows', auth, adminOnly, async (req, res) => {
+  try {
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    const rows = await db.rows.find({ ficheId: fiche._id });
+    res.json({ rows, fiche });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── ELIMINE FICH ──────────────────────────────────────────────
+router.put('/fiches/:ticket/elimine', auth, adminOnly, async (req, res) => {
+  try {
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { statut: 'elimine', eliminePar: req.user.id, elimineAt: new Date() } });
+    res.json({ message: 'Fich elimine' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── BLOKE FICH ────────────────────────────────────────────────
+router.put('/fiches/:ticket/bloke', auth, adminOnly, async (req, res) => {
+  try {
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { statut: 'bloke', blokePar: req.user.id, blokeAt: new Date() } });
+    res.json({ message: 'Fich bloke' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── FICHES PA AJAN ────────────────────────────────────────────
+router.get('/fiches-agent/:agentId', auth, adminOnly, async (req, res) => {
+  try {
+    const { debut, fin } = req.query;
+    let fiches = await db.fiches.find({ agentId: req.params.agentId }).sort({ dateVente: -1 });
+    if (debut || fin) {
+      fiches = fiches.filter(f => {
+        const d = new Date(f.dateVente || f.createdAt);
+        if (debut && d < new Date(debut)) return false;
+        if (fin   && d > new Date(fin + 'T23:59:59')) return false;
+        return true;
+      });
+    }
+    const result = await Promise.all(fiches.slice(0, 300).map(async f => {
+      const t = await db.tirages.findOne({ _id: f.tirageId }).catch(() => null);
+      const rows = await db.rows.find({ ficheId: f._id }).catch(() => []);
+      return {
+        ticket: f.ticket, total: f.total || 0, statut: f.statut,
+        date: f.dateVente || f.createdAt,
+        tirage: t?.nom || f.tirage || '—',
+        rows,
+      };
+    }));
+    res.json({ fiches: result, count: result.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── MODIFYE POS AVÈK LOGO (base64) ───────────────────────────
+router.put('/pos/:id/full', auth, adminOnly, async (req, res) => {
+  try {
+    const { nom, posId, adresse, telephone, actif, logo } = req.body;
+    const update = {};
+    if (nom       !== undefined) update.nom       = nom;
+    if (posId     !== undefined) update.posId     = posId;
+    if (adresse   !== undefined) update.adresse   = adresse;
+    if (telephone !== undefined) update.telephone = telephone;
+    if (actif     !== undefined) update.actif     = actif;
+    if (logo      !== undefined) update.logo      = logo; // base64 string
+    update.updatedAt = new Date();
+    await db.pos.update({ _id: req.params.id }, { $set: update });
+    res.json({ message: 'POS mete ajou', ...update });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── LIMITE PA AJAN ─────────────────────────────────────────────
+router.get('/agents/:id/limites', auth, adminOnly, async (req, res) => {
+  try {
+    const agent = await db.agents.findOne({ _id: req.params.id });
+    if (!agent) return res.status(404).json({ message: 'Ajan pa jwenn' });
+    res.json({ limites: agent.limites || {}, agent: { _id: agent._id, nom: agent.nom, prenom: agent.prenom, username: agent.username } });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/agents/:id/limites', auth, adminOnly, async (req, res) => {
+  try {
+    // { borlette, loto3, mariage, l4p1, l4p2, l4p3,
+    //   tetFichLoto3Dwat, tetFichMariaj, tetFichLoto3Goch, tetFichMariajGoch }
+    await db.agents.update({ _id: req.params.id }, { $set: { limites: req.body, limitesUpdatedAt: new Date() } });
+    res.json({ message: 'Limites ajan mete ajou' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+module.exports = router;
