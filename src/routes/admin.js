@@ -843,3 +843,60 @@ router.put('/agents/:id/limites', auth, adminOnly, async (req, res) => {
 });
 
 module.exports = router;
+
+// ── PRIMES PA AJAN ──────────────────────────────────────────
+// GET /api/admin/agents/:id/primes
+router.get('/agents/:id/primes', auth, async (req, res) => {
+  try {
+    const agent = await db.agents.findOne({ _id: req.params.id });
+    if (!agent) return res.status(404).json({ message: 'Ajan pa jwenn' });
+    // Si ajan pa gen primes pwòp li, retounen primes global
+    const global = await db.settings.findOne({ key: 'primes' });
+    const primes = agent.primes || global?.value || [];
+    res.json(primes);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/agents/:id/primes
+router.put('/agents/:id/primes', auth, adminOnly, async (req, res) => {
+  try {
+    const primes = req.body; // array of { code, type, prime, cat }
+    await db.agents.update({ _id: req.params.id }, { $set: { primes } });
+    res.json({ ok: true, message: 'Primes ajan mete ajou' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// POST /api/admin/calcul-gain — Kalkile gain/pèt yon fich
+router.post('/calcul-gain', auth, async (req, res) => {
+  try {
+    const { mise, code, position, agentId } = req.body;
+    // Chèche primes ajan an oswa global
+    let primes = [];
+    if (agentId) {
+      const agent = await db.agents.findOne({ _id: agentId });
+      if (agent?.primes?.length > 0) primes = agent.primes;
+    }
+    if (!primes.length) {
+      const global = await db.settings.findOne({ key: 'primes' });
+      primes = global?.value || [];
+    }
+    const prime = primes.find(p => String(p.code) === String(code));
+    if (!prime) return res.status(404).json({ message: 'Prime pa jwenn pou kòd ' + code });
+
+    const valStr = String(prime.prime || '0');
+    // Si format "60|20|10" — pozisyon 1,2,3
+    const parts = valStr.split('|').map(Number);
+    const pos = Number(position || 1);
+    const multiplier = parts[pos - 1] || parts[0] || 0;
+
+    const gain  = Number(mise) * multiplier;
+    const perte = Number(mise);
+
+    res.json({
+      code, type: prime.type, prime: prime.prime,
+      mise: Number(mise), multiplier,
+      gain, perte,
+      description: `${mise}G × ${multiplier} = ${gain}G (si genyen) | Pèdi: ${mise}G`
+    });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
