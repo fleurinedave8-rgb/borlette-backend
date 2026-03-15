@@ -22,6 +22,7 @@ const db = {
   transactions: Datastore.create({ filename: path.join(DATA_DIR, 'transactions.db'), autoload: true }),
   succursales:  Datastore.create({ filename: path.join(DATA_DIR, 'succursales.db'),  autoload: true }),
   doleances:    Datastore.create({ filename: path.join(DATA_DIR, 'doleances.db'),    autoload: true }),
+  settings:     Datastore.create({ filename: path.join(DATA_DIR, 'settings.db'),     autoload: true }),
 };
 
 // Seed données par défaut
@@ -93,12 +94,12 @@ async function seed() {
     const primesCount = await db.primes.count({});
     if (primesCount === 0) {
       const primes = [
-        { type:'P0',  label:'Borlette', prime1:60,   prime2:20, prime3:10 },
-        { type:'P1',  label:'Loto3 P1', prime1:400,  prime2:0,  prime3:0  },
-        { type:'P2',  label:'Loto3 P2', prime1:200,  prime2:0,  prime3:0  },
-        { type:'P3',  label:'Loto3 P3', prime1:100,  prime2:0,  prime3:0  },
-        { type:'MAR', label:'Mariage',  prime1:500,  prime2:0,  prime3:0  },
-        { type:'L4',  label:'Loto4',    prime1:3000, prime2:0,  prime3:0  },
+        { code:'20',  type:'P0',  cat:'general', label:'Borlette',       prime:'60|20|10', prime1:60,   prime2:20, prime3:10  },
+        { code:'30',  type:'P1',  cat:'general', label:'Loto 3',          prime:'500',      prime1:500,  prime2:0,  prime3:0   },
+        { code:'40',  type:'MAR', cat:'general', label:'Mariage',         prime:'1000',     prime1:1000, prime2:0,  prime3:0   },
+        { code:'41',  type:'L4',  cat:'general', label:'L401',            prime:'5000',     prime1:5000, prime2:0,  prime3:0   },
+        { code:'44',  type:'MG',  cat:'general', label:'Mariage Gratuit', prime:'2000',     prime1:2000, prime2:0,  prime3:0   },
+        { code:'51',  type:'L5',  cat:'general', label:'L501',            prime:'25000',    prime1:25000,prime2:0,  prime3:0   },
       ];
       for (const p of primes) await db.primes.insert(p);
       console.log('✅ Primes créées');

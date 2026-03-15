@@ -22,6 +22,14 @@ const adminOnly = (req, res, next) => {
  * @param {object} primes - { P0, MAR, P1, P2, P3, L4 }
  * @returns {{ gagne: boolean, gain: number, description: string }}
  */
+// Parse prime string "60|20|10" → [60, 20, 10] oswa [500] pou yon sèl valè
+function parsePrime(p) {
+  if (!p) return [0];
+  const str = String(p);
+  if (str.includes('|')) return str.split('|').map(Number);
+  return [Number(str) || 0];
+}
+
 function kalkilRow(row, resultat, primesMap) {
   const boule = String(row.boule).padStart(2, '0');
   const mise  = Number(row.mise) || 0;
@@ -40,17 +48,18 @@ function kalkilRow(row, resultat, primesMap) {
 
   switch (type) {
     case 'P0': { // Borlette — match lot1, lot2, lot3
+      // Sipòte format "60|20|10" ak ansyen format prime1/prime2/prime3
+      const prStr = primeConfig.prime || primeConfig.prime1 || '60|20|10';
+      const parts = parsePrime(prStr);
+      const [m1, m2, m3] = [parts[0]||60, parts[1]||20, parts[2]||10];
       if (boule === lot1_2d) {
-        const mult = Number(primeConfig.prime1) || 60;
-        return { gagne: true, gain: mise * mult, description: `Borlette 1ey (${mult}x) — ${boule}=${lot1}` };
+        return { gagne: true, gain: mise * m1, description: `Borlette 1e (${m1}x) — ${boule}=${lot1}` };
       }
-      if (boule === lot2_2d && primeConfig.prime2) {
-        const mult = Number(primeConfig.prime2) || 20;
-        return { gagne: true, gain: mise * mult, description: `Borlette 2èm (${mult}x) — ${boule}=${lot2}` };
+      if (boule === lot2_2d && lot2) {
+        return { gagne: true, gain: mise * m2, description: `Borlette 2e (${m2}x) — ${boule}=${lot2}` };
       }
-      if (boule === lot3_2d && primeConfig.prime3) {
-        const mult = Number(primeConfig.prime3) || 10;
-        return { gagne: true, gain: mise * mult, description: `Borlette 3èm (${mult}x) — ${boule}=${lot3}` };
+      if (boule === lot3_2d && lot3) {
+        return { gagne: true, gain: mise * m3, description: `Borlette 3e (${m3}x) — ${boule}=${lot3}` };
       }
       return { gagne: false, gain: 0 };
     }
@@ -63,7 +72,7 @@ function kalkilRow(row, resultat, primesMap) {
       const b2 = parts[1].padStart(2, '0');
       const match = (b1 === lot1_2d && b2 === lot2_2d) || (b1 === lot2_2d && b2 === lot1_2d);
       if (match) {
-        const mult = Number(primeConfig.prime1) || 500;
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'1000')[0]||1000;
         return { gagne: true, gain: mise * mult, description: `Mariage (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
@@ -72,7 +81,7 @@ function kalkilRow(row, resultat, primesMap) {
     case 'P1': { // Loto3 P1 — 3 chif exact order lot1
       const lot1_3d = String(resultat.lot1 || '').padStart(3, '0').slice(-3);
       if (boule === lot1_3d) {
-        const mult = Number(primeConfig.prime1) || 400;
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P1 (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
@@ -81,7 +90,7 @@ function kalkilRow(row, resultat, primesMap) {
     case 'P2': { // Loto3 P2 — 3 chif exact lot2
       const lot2_3d = String(resultat.lot2 || '').padStart(3, '0').slice(-3);
       if (boule === lot2_3d) {
-        const mult = Number(primeConfig.prime1) || 200;
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P2 (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
@@ -90,7 +99,7 @@ function kalkilRow(row, resultat, primesMap) {
     case 'P3': { // Loto3 P3 — 3 chif exact lot3
       const lot3_3d = String(resultat.lot3 || '').padStart(3, '0').slice(-3);
       if (boule === lot3_3d) {
-        const mult = Number(primeConfig.prime1) || 100;
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P3 (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
@@ -99,7 +108,7 @@ function kalkilRow(row, resultat, primesMap) {
     case 'L4': { // Loto4 — 4 chif exact
       const lot1_4d = String(resultat.lot1 || '').padStart(4, '0').slice(-4);
       if (boule === lot1_4d) {
-        const mult = Number(primeConfig.prime1) || 3000;
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'5000')[0]||5000;
         return { gagne: true, gain: mise * mult, description: `Loto4 (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
@@ -323,3 +332,32 @@ router.post('/payer/:ticket', auth, adminOnly, async (req, res) => {
 
 module.exports = router;
 module.exports.kalkilRow = kalkilRow;
+
+// GET /api/gagnant/liste?debut=&fin=
+router.get('/liste', auth, async (req, res) => {
+  try {
+    const { debut, fin } = req.query;
+    let query = { statut: 'gagnant' };
+    if (debut) query.dateVente = { $gte: new Date(debut) };
+    if (fin)   query.dateVente = { ...(query.dateVente||{}), $lte: new Date(fin+'T23:59:59') };
+    const isAgent = req.user?.role === 'agent';
+    if (isAgent) query.agentId = req.user.id;
+    const fiches = await db.fiches.find(query).sort({ dateVente: -1 });
+    res.json(fiches);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/gagnant/payer/:ticket
+router.put('/payer/:ticket', auth, adminOnly, async (req, res) => {
+  try {
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    await db.fiches.update({ ticket: req.params.ticket }, {
+      $set: { paye: true, datePaye: new Date(), payePar: req.user.username }
+    });
+    const broadcast = req.app?.locals?.broadcast;
+    if (broadcast) broadcast({ type:'fich_paye', ticket: req.params.ticket,
+      gain: fiche.gainTotal||0, ts: Date.now() });
+    res.json({ ok: true, gain: fiche.gainTotal || 0 });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});

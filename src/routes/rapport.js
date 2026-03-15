@@ -356,3 +356,62 @@ router.get('/defisi', auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// ── WOUT SIPLEMANTÈ ────────────────────────────────────────
+
+// GET /api/rapport/statistiques?date=
+router.get('/statistiques', auth, async (req, res) => {
+  try {
+    const { date } = req.query;
+    const d = date ? new Date(date) : new Date();
+    d.setHours(0,0,0,0);
+    const dEnd = new Date(d); dEnd.setHours(23,59,59,999);
+    const isAgent = req.user?.role === 'agent';
+    let query = { dateVente: { $gte: d, $lte: dEnd } };
+    if (isAgent) query.agentId = req.user.id;
+    const fiches = await db.fiches.find(query);
+    const vente = fiches.reduce((s,f) => s+(f.total||0), 0);
+    const ganyan = fiches.filter(f => f.statut==='gagnant').reduce((s,f)=>s+(f.gainTotal||0),0);
+    const elimine = fiches.filter(f => f.statut==='elimine').reduce((s,f)=>s+(f.total||0),0);
+    res.json({ vente, ganyan, elimine, bilan: vente-ganyan, fiches: fiches.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/rapport/partiel?date=  (ventes matin/soir)
+router.get('/partiel', auth, async (req, res) => {
+  try {
+    const { date } = req.query;
+    const d = date ? new Date(date) : new Date();
+    d.setHours(0,0,0,0);
+    const dEnd = new Date(d); dEnd.setHours(23,59,59,999);
+    const isAgent = req.user?.role === 'agent';
+    let query = { dateVente: { $gte: d, $lte: dEnd } };
+    if (isAgent) query.agentId = req.user.id;
+    const fiches = await db.fiches.find(query);
+    const matin = fiches.filter(f => new Date(f.dateVente).getHours() < 14);
+    const soir  = fiches.filter(f => new Date(f.dateVente).getHours() >= 14);
+    res.json({
+      matin: { fiches: matin.length, vente: matin.reduce((s,f)=>s+(f.total||0),0) },
+      soir:  { fiches: soir.length,  vente: soir.reduce((s,f)=>s+(f.total||0),0) },
+      total: { fiches: fiches.length, vente: fiches.reduce((s,f)=>s+(f.total||0),0) },
+    });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/rapport/tirage?debut=&fin=&tirage=  (ventes fin tirage)
+router.get('/tirage', auth, async (req, res) => {
+  try {
+    const { debut, fin, tirage, succursal } = req.query;
+    let query = {};
+    if (debut) query.dateVente = { $gte: new Date(debut) };
+    if (fin)   query.dateVente = { ...(query.dateVente||{}), $lte: new Date(fin+'T23:59:59') };
+    if (tirage && tirage !== 'Tout') query.tirage = tirage;
+    const isAgent = req.user?.role === 'agent';
+    if (isAgent) query.agentId = req.user.id;
+    const fiches = await db.fiches.find(query);
+    const vente  = fiches.reduce((s,f) => s+(f.total||0), 0);
+    const ganyan = fiches.filter(f=>f.statut==='gagnant').reduce((s,f)=>s+(f.gainTotal||0),0);
+    res.json({ qtyPos: new Set(fiches.map(f=>f.posId)).size, qtyFacturable: fiches.length,
+      vente, ganyan, bilan: vente-ganyan, fiches: fiches.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});

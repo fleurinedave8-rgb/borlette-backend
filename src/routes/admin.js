@@ -117,6 +117,15 @@ router.get('/stats', auth, async (req, res) => {
       totalGagne: totalGagne.toFixed(2),
       commJodi: commJodi.toFixed(2),
 
+      // Bilan Net Jounen
+      totalGagneJodi: gagnantFiches
+        .filter(f => new Date(f.dateVente) >= today)
+        .reduce((s,f) => s+(f.gainTotal||f.montantGagne||0), 0).toFixed(2),
+      bilanJodi: (venteJodi
+        - gagnantFiches.filter(f=>new Date(f.dateVente)>=today).reduce((s,f)=>s+(f.gainTotal||f.montantGagne||0),0)
+        - commJodi
+      ).toFixed(2),
+
       // Détail
       ventePaTiraj,
       topAgents,
@@ -898,5 +907,219 @@ router.post('/calcul-gain', auth, async (req, res) => {
       gain, perte,
       description: `${mise}G × ${multiplier} = ${gain}G (si genyen) | Pèdi: ${mise}G`
     });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── WOUT KI MANKE — AJOUTE ─────────────────────────────────
+
+// GET /api/admin/tete-fiche
+router.get('/tete-fiche', auth, async (req, res) => {
+  try {
+    const s = await db.settings.findOne({ key: 'tete-fiche' });
+    res.json(s?.value || { ligne1:'LA-PROBITE-BORLETTE', ligne2:'', ligne3:'', ligne4:'Fich sa valid pou 90 jou' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/tete-fiche', auth, adminOnly, async (req, res) => {
+  try {
+    await db.settings.update({ key:'tete-fiche' }, { $set:{ key:'tete-fiche', value: req.body } }, { upsert: true });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/mariage-gratuit
+router.get('/mariage-gratuit', auth, async (req, res) => {
+  try {
+    const s = await db.settings.findOne({ key: 'mariage-gratuit' });
+    res.json(s?.value || { prime: 2000, actif: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/mariage-gratuit', auth, adminOnly, async (req, res) => {
+  try {
+    await db.settings.update({ key:'mariage-gratuit' }, { $set:{ key:'mariage-gratuit', value: req.body } }, { upsert: true });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/doleances
+router.get('/doleances', auth, async (req, res) => {
+  try {
+    const list = await db.doleances.find({}).sort({ createdAt: -1 }).catch(() => []);
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/doleances', auth, async (req, res) => {
+  try {
+    const d = await db.doleances.insert({ ...req.body, statut:'nouveau', createdAt: new Date() });
+    res.json(d);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/doleances/:id/statut', auth, adminOnly, async (req, res) => {
+  try {
+    await db.doleances.update({ _id: req.params.id }, { $set: { statut: req.body.statut, updatedAt: new Date() } });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/pos-connectes
+router.get('/pos-connectes', auth, async (req, res) => {
+  try {
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const pos = await db.pos.find({ lastSeen: { $gte: fiveMinAgo } });
+    res.json({ pos, count: pos.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/pos/:id/full
+router.get('/pos/:id/full', auth, async (req, res) => {
+  try {
+    const pos = await db.pos.findOne({ _id: req.params.id });
+    if (!pos) return res.status(404).json({ message: 'POS pa jwenn' });
+    const agent = pos.agentId ? await db.agents.findOne({ _id: pos.agentId }) : null;
+    res.json({ ...pos, agent });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/succursales
+router.get('/succursales', auth, async (req, res) => {
+  try {
+    const list = await db.succursales.find({}).catch(() => []);
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/succursales', auth, adminOnly, async (req, res) => {
+  try {
+    const s = await db.succursales.insert({ ...req.body, actif: true, createdAt: new Date() });
+    res.json(s);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/succursales/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.succursales.update({ _id: req.params.id }, { $set: req.body });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/succursales/:id/toggle', auth, adminOnly, async (req, res) => {
+  try {
+    const s = await db.succursales.findOne({ _id: req.params.id });
+    await db.succursales.update({ _id: req.params.id }, { $set: { actif: !s?.actif } });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.delete('/succursales/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.succursales.remove({ _id: req.params.id });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.put('/succursales/:id/pos', auth, adminOnly, async (req, res) => {
+  try {
+    const { posIds } = req.body;
+    if (Array.isArray(posIds)) {
+      for (const pid of posIds) {
+        await db.pos.update({ _id: pid }, { $set: { succursaleId: req.params.id } });
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/prepaye
+router.get('/prepaye', auth, adminOnly, async (req, res) => {
+  try {
+    const agents = await db.agents.find({ prepaye: true });
+    res.json(agents.map(a => ({
+      id: a._id, nom: a.nom, prenom: a.prenom, username: a.username,
+      balance: a.balance || 0, montantPrepaye: a.montantPrepaye || 0,
+    })));
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post('/prepaye', auth, adminOnly, async (req, res) => {
+  try {
+    const { agentId, montant } = req.body;
+    const agent = await db.agents.findOne({ _id: agentId });
+    if (!agent) return res.status(404).json({ message: 'Ajan pa jwenn' });
+    const newBal = (agent.balance || 0) + Number(montant);
+    await db.agents.update({ _id: agentId }, { $set: { balance: newBal, prepaye: true } });
+    res.json({ ok: true, balance: newBal });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/fiches
+router.get('/fiches', auth, adminOnly, async (req, res) => {
+  try {
+    const { debut, fin } = req.query;
+    let query = {};
+    if (debut || fin) {
+      query.dateVente = {};
+      if (debut) query.dateVente.$gte = new Date(debut);
+      if (fin)   query.dateVente.$lte = new Date(fin + 'T23:59:59');
+    }
+    const fiches = await db.fiches.find(query).sort({ dateVente: -1 });
+    res.json({ fiches, total: fiches.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/fiches-agent/:id
+router.get('/fiches-agent/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { debut, fin } = req.query;
+    let query = { agentId: req.params.id };
+    if (debut) query.dateVente = { $gte: new Date(debut) };
+    if (fin)   query.dateVente = { ...query.dateVente, $lte: new Date(fin + 'T23:59:59') };
+    const fiches = await db.fiches.find(query).sort({ dateVente: -1 });
+    res.json({ fiches, total: fiches.length });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/fiches/:ticket/rows
+router.get('/fiches/:ticket/rows', auth, async (req, res) => {
+  try {
+    const fiche = await db.fiches.findOne({ ticket: req.params.ticket });
+    if (!fiche) return res.status(404).json({ message: 'Fich pa jwenn' });
+    const rows = await db.rows.find({ ficheId: fiche._id });
+    res.json(rows);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/fiches/:ticket/bloke
+router.put('/fiches/:ticket/bloke', auth, adminOnly, async (req, res) => {
+  try {
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { statut: 'bloke', blockedAt: new Date(), blockedBy: req.user.username } });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/fiches/:ticket/elimine
+router.put('/fiches/:ticket/elimine', auth, adminOnly, async (req, res) => {
+  try {
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { statut: 'elimine', eliminatedAt: new Date(), eliminatedBy: req.user.username } });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/fiches/:ticket/statut
+router.put('/fiches/:ticket/statut', auth, adminOnly, async (req, res) => {
+  try {
+    await db.fiches.update({ ticket: req.params.ticket }, { $set: { ...req.body, updatedAt: new Date() } });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// GET /api/admin/logs
+router.get('/logs', auth, adminOnly, async (req, res) => {
+  try {
+    const { limit = 100, page = 0 } = req.query;
+    const logs = await db.logs.find({}).sort({ createdAt: -1 });
+    res.json(logs.slice(Number(page)*Number(limit), (Number(page)+1)*Number(limit)));
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

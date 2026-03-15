@@ -90,7 +90,12 @@ router.post('/login', async (req, res) => {
           ligne2: tete.ligne2 || posRecord.adresse || '',
           ligne3: tete.ligne3 || posRecord.telephone || '',
           ligne4: tete.ligne4 || 'Fich sa valid pou 90 jou',
-        }
+        },
+        logo:         posRecord.logo || '',
+        agentPct:     posRecord.agentPct || 0,
+        supPct:       posRecord.supPct || 0,
+        messageAdmin: posRecord.messageAdmin || '',
+        credit:       posRecord.credit || 'Illimité',
       }
     });
 
