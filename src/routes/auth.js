@@ -40,19 +40,19 @@ router.post('/login', async (req, res) => {
     }
 
     // Chèche POS pa: deviceId, posId, oswa agentUsername
+    // Chèche POS — san filtre actif pou evite bloke si champ pa defini
     const posRecord = await db.pos.findOne({
       $or: [
-        { deviceId: deviceId },
-        { posId:    deviceId },
+        { deviceId:      deviceId },
+        { posId:         deviceId },
         { agentUsername: agent.username },
-        { agentId: agent._id },
-      ],
-      actif: true
+        { agentId:       String(agent._id) },
+      ]
     });
 
     if (!posRecord) {
       return res.status(403).json({
-        message: `❌ POS ou a pa anrejistre.\n\nDevice ID:\n${deviceId}\n\nKopye Device ID sa a ba Admin ou a pou li anrejistre aparèy ou nan:\nWeb Admin → Agents/POS → Nouvo POS`,
+        message: `POS pa jwenn pou ajan @${agent.username}.\n\nAdmin dwe:\n1. Ale sou Web Admin → Agents/POS\n2. Kreye yon POS\n3. Mete Username: ${agent.username}\n\nDevice ID: ${deviceId}`,
         deviceId: deviceId,
         code: 'POS_NOT_REGISTERED'
       });
