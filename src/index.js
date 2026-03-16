@@ -123,10 +123,18 @@ for (const time of DRAW_TIMES) {
   cron.schedule(`${m} ${h} * * *`, autoScrape, { timezone: 'America/Port-au-Prince' });
 }
 
-server.listen(PORT, () => {
-  console.log(`🚀 LA-PROBITE-BORLETTE API v3 — Port ${PORT}`);
-  console.log(`🔌 WebSocket actif: ws://0.0.0.0:${PORT}/ws`);
-  console.log(`⏰ Scraper: toutes les 15min (10h-23h) + aux heures de tirage`);
-  // Premier scrape au démarrage après 30s
-  setTimeout(autoScrape, 30000);
-});
+// ── KÒMANSE SÈVÈ APRE MONGODB KONEKTE ──────────────────────
+connectMongo()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`🚀 LA-PROBITE-BORLETTE API v3 — Port ${PORT}`);
+      console.log(`🔌 WebSocket: ws://0.0.0.0:${PORT}/ws`);
+      console.log(`💾 MongoDB: konekte ✅`);
+      setTimeout(autoScrape, 30000);
+    });
+  })
+  .catch(err => {
+    console.error('❌ MongoDB echwe:', err.message);
+    console.error('👉 Verifye MONGODB_URI nan Railway Variables');
+    process.exit(1);
+  });
