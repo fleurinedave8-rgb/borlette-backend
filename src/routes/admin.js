@@ -1,7 +1,7 @@
 const { calculerGagnants } = require('./scraper');
 const express = require('express');
 const bcrypt  = require('bcryptjs');
-const db      = require('../database');
+const { db }   = require('../database');
 const auth    = require('../middleware/auth');
 const router  = express.Router();
 
@@ -508,7 +508,7 @@ router.post('/pos', auth, adminOnly, async (req, res) => {
     if (exists) return res.status(400).json({ message: 'POS ID deja enregistre' });
     const p = await db.pos.insert({
       posId, nom, adresse, telephone, agentId, agentUsername,
-      succursale, prime: prime||'60|20|10',
+      succursale, prime: prime||'50|20|10',
       agentPct: agentPct||0, supPct: supPct||0,
       credit: credit||'Illimité',
       prepaye: prepaye||false,
@@ -1121,5 +1121,56 @@ router.get('/logs', auth, adminOnly, async (req, res) => {
     const { limit = 100, page = 0 } = req.query;
     const logs = await db.logs.find({}).sort({ createdAt: -1 });
     res.json(logs.slice(Number(page)*Number(limit), (Number(page)+1)*Number(limit)));
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ── BACKUP / EXPORT DONE ────────────────────────────────────
+// GET /api/admin/backup — eksporte tout done enpòtan
+router.get('/backup', auth, adminOnly, async (req, res) => {
+  try {
+    const [agents, pos, tirages, primes, resultats, limites] = await Promise.all([
+      db.agents.find({}),
+      db.pos.find({}),
+      db.tirages.find({}),
+      db.primes.find({}),
+      db.resultats.find({}).sort({ createdAt: -1 }),
+      db.limites.find({}),
+    ]);
+    const backup = {
+      version: '1.0',
+      date: new Date().toISOString(),
+      agents:   agents.map(a => ({...a, password: undefined})),
+      pos, tirages, primes, resultats: resultats.slice(0,500), limites,
+    };
+    res.setHeader('Content-Disposition',
+      `attachment; filename="backup-${new Date().toISOString().split('T')[0]}.json"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(backup);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// POST /api/admin/restore — restore done depi backup
+router.post('/restore', auth, adminOnly, async (req, res) => {
+  try {
+    const { tirages, primes, limites } = req.body;
+    if (tirages && Array.isArray(tirages)) {
+      const count = await db.tirages.count({});
+      if (count === 0) {
+        for (const t of tirages) {
+          const { _id, ...data } = t;
+          await db.tirages.insert(data);
+        }
+      }
+    }
+    if (primes && Array.isArray(primes)) {
+      const count = await db.primes.count({});
+      if (count === 0) {
+        for (const p of primes) {
+          const { _id, ...data } = p;
+          await db.primes.insert(data);
+        }
+      }
+    }
+    res.json({ ok: true, message: 'Restore fini' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

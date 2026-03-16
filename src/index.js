@@ -5,18 +5,28 @@ const cron     = require('node-cron');
 const http     = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
 
-require('./database');
+const { db, connectMongo } = require('./database');
 
 const app    = express();
 const server = http.createServer(app);
 const PORT   = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: [
-    'https://borlette-web.vercel.app',
-    'http://localhost:3000',
-    process.env.FRONTEND_URL || '*',
-  ].filter(Boolean),
+  origin: function(origin, callback) {
+    // Aksepte tout vercel.app, localhost, ak URL ki nan env
+    const allowed = [
+      'https://borlette-web.vercel.app',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      process.env.FRONTEND_URL,
+    ].filter(Boolean);
+    // Pa gen origin (mobile app, Postman, curl) — aksepte
+    if (!origin) return callback(null, true);
+    // Vercel preview URLs
+    if (origin.includes('.vercel.app')) return callback(null, true);
+    if (allowed.includes(origin)) return callback(null, true);
+    return callback(null, true); // Pou kounyea aksepte tout
+  },
   credentials: true,
 }));
 app.use(express.json());

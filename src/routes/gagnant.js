@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════
  */
 const express = require('express');
-const db      = require('../database');
+const { db }   = require('../database');
 const auth    = require('../middleware/auth');
 const router  = express.Router();
 
@@ -51,7 +51,7 @@ function kalkilRow(row, resultat, primesMap) {
       // Sipòte format "60|20|10" ak ansyen format prime1/prime2/prime3
       const prStr = primeConfig.prime || primeConfig.prime1 || '60|20|10';
       const parts = parsePrime(prStr);
-      const [m1, m2, m3] = [parts[0]||60, parts[1]||20, parts[2]||10];
+      const [m1, m2, m3] = [parts[0]||50, parts[1]||20, parts[2]||10];
       if (boule === lot1_2d) {
         return { gagne: true, gain: mise * m1, description: `Borlette 1e (${m1}x) — ${boule}=${lot1}` };
       }
@@ -110,6 +110,14 @@ function kalkilRow(row, resultat, primesMap) {
       if (boule === lot1_4d) {
         const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'5000')[0]||5000;
         return { gagne: true, gain: mise * mult, description: `Loto4 (${mult}x) — ${boule}` };
+      }
+      return { gagne: false, gain: 0 };
+    }
+
+    case 'MG': { // Mariage Gratuit — ×3000
+      if (boule === lot1_2d || boule === lot2_2d) {
+        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'3000')[0]||3000;
+        return { gagne: true, gain: mise * mult, description: `Mariage Gratuit (×${mult}) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
     }
