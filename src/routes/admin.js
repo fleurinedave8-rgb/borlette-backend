@@ -181,9 +181,23 @@ router.post('/agents', auth, adminOnly, async (req, res) => {
 
 router.put('/agents/:id', auth, adminOnly, async (req, res) => {
   try {
-    const { password, ...data } = req.body;
+    const { password, oldPassword, ...data } = req.body;
     const update = { ...data };
-    if (password) update.password = bcrypt.hashSync(password, 10);
+
+    if (password) {
+      // Si oldPassword voye — verifye l anvan chanje
+      if (oldPassword) {
+        const agent = await db.agents.findOne({ _id: req.params.id });
+        if (agent) {
+          const valid = await bcrypt.compare(oldPassword, agent.password);
+          if (!valid) {
+            return res.status(400).json({ message: 'Ansyen modpas pa kòrèk!' });
+          }
+        }
+      }
+      update.password = bcrypt.hashSync(password, 10);
+    }
+
     await db.agents.update({ _id: req.params.id }, { $set: update });
     res.json({ message: 'Agent mis à jour' });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -395,7 +409,7 @@ router.get('/primes', auth, async (req, res) => {
     let primes = await db.primes.find({});
     if (primes.length === 0) {
       const defaults = [
-        { type:'P0', label:'Borlette',  prime1:60, prime2:20, prime3:10 },
+        { type:'P0', label:'Borlette',  prime1:50, prime2:20, prime3:10 },
         { type:'P1', label:'Loto3 P1',  prime1:400, prime2:0, prime3:0 },
         { type:'P2', label:'Loto3 P2',  prime1:200, prime2:0, prime3:0 },
         { type:'P3', label:'Loto3 P3',  prime1:100, prime2:0, prime3:0 },
@@ -700,7 +714,7 @@ router.post('/succursales', auth, adminOnly, async (req, res) => {
     if (exists) return res.status(400).json({ message: 'Succursal sa a deja egziste' });
     const s = await db.succursales.insert({
       nom: nom.trim(), limite: limite || 'Illimité',
-      prime: prime || '60/20/10', limiteGain: limiteGain || 'Illimité',
+      prime: prime || '50/20/10', limiteGain: limiteGain || 'Illimité',
       message: message || '', mariage: mariage || false,
       bank: bank || '', actif: true, createdAt: new Date(),
     });
@@ -893,7 +907,7 @@ router.post('/calcul-gain', auth, async (req, res) => {
     if (!prime) return res.status(404).json({ message: 'Prime pa jwenn pou kòd ' + code });
 
     const valStr = String(prime.prime || '0');
-    // Si format "60|20|10" — pozisyon 1,2,3
+    // Si format "50|20|10" — pozisyon 1,2,3
     const parts = valStr.split('|').map(Number);
     const pos = Number(position || 1);
     const multiplier = parts[pos - 1] || parts[0] || 0;
@@ -1172,5 +1186,39 @@ router.post('/restore', auth, adminOnly, async (req, res) => {
       }
     }
     res.json({ ok: true, message: 'Restore fini' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// PUT /api/admin/fix-primes — Korije tout POS ki gen ansyen prime 60|20|10
+router.put('/fix-primes', auth, adminOnly, async (req, res) => {
+  try {
+    // Jwenn tout POS ak vye prime
+    const allPos = await db.pos.find({});
+    let count = 0;
+    for (const p of allPos) {
+      const pr = p.prime || '';
+      if (pr.includes('60') || pr === '60/20/10' || pr === '60|20|10') {
+        await db.pos.update(
+          { _id: p._id },
+          { $set: { prime: '50|20|10' } }
+        );
+        count++;
+      }
+    }
+    // Korije tou agents ki gen vye prime
+    const allAgents = await db.agents.find({});
+    let aCount = 0;
+    for (const a of allAgents) {
+      const pr = a.prime || '';
+      if (pr.includes('60') || pr === '60/20/10' || pr === '60|20|10') {
+        await db.agents.update(
+          { _id: a._id },
+          { $set: { prime: '50|20|10' } }
+        );
+        aCount++;
+      }
+    }
+    res.json({ ok: true, posFixed: count, agentsFixed: aCount,
+      message: `${count} POS + ${aCount} Ajan korije: 60→50` });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });

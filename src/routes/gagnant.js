@@ -22,7 +22,7 @@ const adminOnly = (req, res, next) => {
  * @param {object} primes - { P0, MAR, P1, P2, P3, L4 }
  * @returns {{ gagne: boolean, gain: number, description: string }}
  */
-// Parse prime string "60|20|10" → [60, 20, 10] oswa [500] pou yon sèl valè
+// Parse prime string "50|20|10" → [60, 20, 10] oswa [500] pou yon sèl valè
 function parsePrime(p) {
   if (!p) return [0];
   const str = String(p);
@@ -48,8 +48,8 @@ function kalkilRow(row, resultat, primesMap) {
 
   switch (type) {
     case 'P0': { // Borlette — match lot1, lot2, lot3
-      // Sipòte format "60|20|10" ak ansyen format prime1/prime2/prime3
-      const prStr = primeConfig.prime || primeConfig.prime1 || '60|20|10';
+      // Sipòte format "50|20|10" ak ansyen format prime1/prime2/prime3
+      const prStr = primeConfig.prime || primeConfig.prime1 || '50|20|10';
       const parts = parsePrime(prStr);
       const [m1, m2, m3] = [parts[0]||50, parts[1]||20, parts[2]||10];
       if (boule === lot1_2d) {
