@@ -65,51 +65,77 @@ function kalkilRow(row, resultat, primesMap) {
     }
 
     case 'MAR': { // Mariage — 2 boules match lot1 ak lot2
-      // Row boule format: "12-34" (2 boules)
-      const parts = boule.split('-');
+      // Row boule format: "12*34" (astèris) oswa "12-34" (tiret) — sipòte 2 fòma
+      const sep = boule.includes('*') ? '*' : '-';
+      const parts = boule.split(sep);
       if (parts.length !== 2) return { gagne: false, gain: 0 };
       const b1 = parts[0].padStart(2, '0');
       const b2 = parts[1].padStart(2, '0');
-      const match = (b1 === lot1_2d && b2 === lot2_2d) || (b1 === lot2_2d && b2 === lot1_2d);
+      // Règ ofisyèl: 6 kombinèzon — b1+b2 ka parèt nan nenpòt pozisyon
+      const match = (b1 === lot1_2d && b2 === lot2_2d)
+                 || (b1 === lot2_2d && b2 === lot1_2d)
+                 || (b1 === lot1_2d && b2 === lot3_2d)
+                 || (b1 === lot3_2d && b2 === lot1_2d)
+                 || (b1 === lot2_2d && b2 === lot3_2d)
+                 || (b1 === lot3_2d && b2 === lot2_2d);
       if (match) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'1000')[0]||1000;
+        const pc = primesMap['MAR'] || primesMap['mar'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'1000')[0]||1000;
         return { gagne: true, gain: mise * mult, description: `Mariage (${mult}x) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
     }
 
-    case 'P1': { // Loto3 P1 — 3 chif exact order lot1
+    case 'P1': { // Loto3 P1 — 3 dènye chif lot1
       const lot1_3d = String(resultat.lot1 || '').padStart(3, '0').slice(-3);
-      if (boule === lot1_3d) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
-        return { gagne: true, gain: mise * mult, description: `Loto3 P1 (${mult}x) — ${boule}` };
+      const b3 = String(row.boule).padStart(3, '0').slice(-3);
+      if (b3 === lot1_3d) {
+        const pc = primesMap['P1'] || primesMap['loto3'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+        return { gagne: true, gain: mise * mult, description: `Loto3 P1 (${mult}x) — ${b3}` };
       }
       return { gagne: false, gain: 0 };
     }
 
-    case 'P2': { // Loto3 P2 — 3 chif exact lot2
+    case 'P2': { // Loto3 P2 — 3 dènye chif lot2
       const lot2_3d = String(resultat.lot2 || '').padStart(3, '0').slice(-3);
-      if (boule === lot2_3d) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
-        return { gagne: true, gain: mise * mult, description: `Loto3 P2 (${mult}x) — ${boule}` };
+      const b3 = String(row.boule).padStart(3, '0').slice(-3);
+      if (b3 === lot2_3d) {
+        const pc = primesMap['P2'] || primesMap['P1'] || primesMap['loto3'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+        return { gagne: true, gain: mise * mult, description: `Loto3 P2 (${mult}x) — ${b3}` };
       }
       return { gagne: false, gain: 0 };
     }
 
-    case 'P3': { // Loto3 P3 — 3 chif exact lot3
+    case 'P3': { // Loto3 P3 — 3 dènye chif lot3
       const lot3_3d = String(resultat.lot3 || '').padStart(3, '0').slice(-3);
-      if (boule === lot3_3d) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'500')[0]||500;
-        return { gagne: true, gain: mise * mult, description: `Loto3 P3 (${mult}x) — ${boule}` };
+      const b3 = String(row.boule).padStart(3, '0').slice(-3);
+      if (b3 === lot3_3d) {
+        const pc = primesMap['P3'] || primesMap['P1'] || primesMap['loto3'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+        return { gagne: true, gain: mise * mult, description: `Loto3 P3 (${mult}x) — ${b3}` };
       }
       return { gagne: false, gain: 0 };
     }
 
-    case 'L4': { // Loto4 — 4 chif exact
+    case 'L4': { // Loto4 — 4 chif nan 3 pozisyon diferan
+      const b4 = String(row.boule).padStart(4, '0').slice(-4);
+      // Lotto.ht règ: 4 chif ka match nan pozisyon 2-5, 2-3+6-7, oswa 4-7
+      // lot gen 7 chif: d1 d2 d3 d4 d5 d6 d7
+      const lot7 = String(resultat.lot1 || '').padStart(7, '0');
+      const pos1 = lot7.slice(1, 5); // pozisyon 2-5  (x0123xx)
+      const pos2 = lot7.slice(1, 3) + lot7.slice(5, 7); // pozisyon 2-3+6-7 (x01xx23)
+      const pos3 = lot7.slice(3, 7); // pozisyon 4-7  (xxx0123)
+      // Si lot kout (2 chif sèlman), itilize kalkil senp: 4 dènye chif
       const lot1_4d = String(resultat.lot1 || '').padStart(4, '0').slice(-4);
-      if (boule === lot1_4d) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'5000')[0]||5000;
-        return { gagne: true, gain: mise * mult, description: `Loto4 (${mult}x) — ${boule}` };
+
+      // Jwenn prime L4 — chèche L4, L41, L42, L43
+      const pc = primesMap['L4'] || primesMap['L41'] || primesMap['L42'] || primesMap['L43'] || primeConfig;
+      const mult = parsePrime(pc.prime||pc.prime1||'5000')[0]||5000;
+
+      if (b4 === lot1_4d || b4 === pos1 || b4 === pos2 || b4 === pos3) {
+        return { gagne: true, gain: mise * mult, description: `Loto4 (${mult}x) — ${b4}` };
       }
       return { gagne: false, gain: 0 };
     }
