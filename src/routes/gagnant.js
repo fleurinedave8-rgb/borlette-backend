@@ -140,10 +140,62 @@ function kalkilRow(row, resultat, primesMap) {
       return { gagne: false, gain: 0 };
     }
 
-    case 'MG': { // Mariage Gratuit — ×3000
+    case 'MG': { // Mariage Gratuit — ×2000 (ofisyèl lotto.ht)
       if (boule === lot1_2d || boule === lot2_2d) {
-        const mult = parsePrime(primeConfig.prime||primeConfig.prime1||'3000')[0]||3000;
+        const pc = primesMap['MG'] || primesMap['Mariage Gratuit'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'2000')[0]||2000;
         return { gagne: true, gain: mise * mult, description: `Mariage Gratuit (×${mult}) — ${boule}` };
+      }
+      return { gagne: false, gain: 0 };
+    }
+
+    // ── TÈT FICH — boule ki sòti sou tèt fich la ──────────────
+    case 'TF':   // Tèt Fich Borlette Normal
+    case 'TF1': {
+      const pc = primesMap['TF'] || primesMap['TF1'] || primesMap['Tet fich'] || primeConfig;
+      const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+      if (boule === lot1_2d) {
+        return { gagne: true, gain: mise * mult, description: `Tèt Fich (×${mult}) — ${boule}` };
+      }
+      return { gagne: false, gain: 0 };
+    }
+
+    case 'TF2': { // Tèt Fich Loto3
+      const lot1_3d = String(resultat.lot1 || '').padStart(3, '0').slice(-3);
+      const b3 = String(row.boule).padStart(3, '0').slice(-3);
+      const pc = primesMap['TF2'] || primesMap['Tet fich loto3'] || primeConfig;
+      const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+      if (b3 === lot1_3d) {
+        return { gagne: true, gain: mise * mult, description: `Tèt Fich Loto3 (×${mult}) — ${b3}` };
+      }
+      return { gagne: false, gain: 0 };
+    }
+
+    case 'TF3': { // Tèt Fich Mariage Dwat (Droite)
+      const sep3 = boule.includes('*') ? '*' : '-';
+      const parts3 = boule.split(sep3);
+      if (parts3.length !== 2) return { gagne: false, gain: 0 };
+      const b1 = parts3[0].padStart(2,'0'), b2 = parts3[1].padStart(2,'0');
+      const match3 = (b1===lot1_2d&&b2===lot2_2d);
+      if (match3) {
+        const pc = primesMap['TF3'] || primesMap['Tet fich mariaj dwat'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+        return { gagne: true, gain: mise * mult, description: `TF Mariage Dwat (×${mult}) — ${boule}` };
+      }
+      return { gagne: false, gain: 0 };
+    }
+
+    case 'TF4': { // Tèt Fich Mariage Gauche (Gòch)
+      const sep4 = boule.includes('*') ? '*' : '-';
+      const parts4 = boule.split(sep4);
+      if (parts4.length !== 2) return { gagne: false, gain: 0 };
+      const b1g = parts4[0].padStart(2,'0'), b2g = parts4[1].padStart(2,'0');
+      // Gòch = inversé (lot2 anvan lot1)
+      const match4 = (b1g===lot2_2d&&b2g===lot1_2d);
+      if (match4) {
+        const pc = primesMap['TF4'] || primesMap['Tet fich mariaj gauch'] || primeConfig;
+        const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
+        return { gagne: true, gain: mise * mult, description: `TF Mariage Gòch (×${mult}) — ${boule}` };
       }
       return { gagne: false, gain: 0 };
     }
@@ -172,6 +224,33 @@ router.post('/calculer', auth, adminOnly, async (req, res) => {
     const primesMap  = {};
     for (const p of primesList) {
       primesMap[p.type] = p;
+    }
+
+    // Mapping: type DB → type POS (pou kalkil ka jwenn prime kòrèk)
+    // Type DB: 'Borlette','Loto 3','Mariage','L4O1','L4O2','L4O3','Mariage Gratuit','Tet fich...'
+    // Type POS: 'P0','P1','P2','P3','MAR','L4','MG','TF1','TF2','TF3','TF4'
+    const DB_TO_POS = {
+      'Borlette': 'P0',
+      'Loto 3': 'P1',  // Loto3 P1 pa default
+      'Mariage': 'MAR',
+      'L4O1': 'L41', 'L4O2': 'L42', 'L4O3': 'L43',
+      'Mariage Gratuit': 'MG',
+      'Tet fich': 'TF',
+      'Tet fich loto3': 'TF2',
+      'Tet fich mariaj dwat': 'TF3',
+      'Tet fich mariaj gauch': 'TF4',
+    };
+    for (const [dbType, posType] of Object.entries(DB_TO_POS)) {
+      if (primesMap[dbType] && !primesMap[posType]) {
+        primesMap[posType] = primesMap[dbType];
+      }
+    }
+    // Loto3 P2/P3 itilize menm prime ak P1
+    if (primesMap['P1'] && !primesMap['P2']) primesMap['P2'] = primesMap['P1'];
+    if (primesMap['P1'] && !primesMap['P3']) primesMap['P3'] = primesMap['P1'];
+    // L4 jwenn nan L41/L42/L43
+    if (!primesMap['L4'] && (primesMap['L41']||primesMap['L42']||primesMap['L43'])) {
+      primesMap['L4'] = primesMap['L41'] || primesMap['L42'] || primesMap['L43'];
     }
 
     const resultat = { lot1, lot2: lot2||'', lot3: lot3||'' };
