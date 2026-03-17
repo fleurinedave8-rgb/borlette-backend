@@ -227,7 +227,7 @@ router.get('/journalier', auth, async (req, res) => {
       Object.values(posMap).map(async entry => {
         const a   = await db.agents.findOne({ _id: entry.agentId });
         const pos = allPos.find(p => p.agentUsername === a?.username || p.agentId === entry.agentId);
-        const pct = a?.agentPct || 10;
+        // Pa gen komisyon — kalkil sèlman vente - gain
         const vente     = entry.vente;
         const apaye     = vente;          // tout fich vann = deja paye
         const komisyon  = vente * pct / 100;
@@ -325,33 +325,36 @@ router.get('/defisi', auth, async (req, res) => {
     }
 
     const rows = await Promise.all(Object.entries(agentMap).map(async ([id, d]) => {
-      const a   = await db.agents.findOne({ _id: id });
-      const pct = a?.agentPct || 10;
-      const komisyon = d.vente * pct / 100;
-      const net      = d.vente - d.gain - komisyon;  // negatif = defisi
+      const a  = await db.agents.findOne({ _id: id });
+      // Kalkil defisi: vente - gain (pa gen komisyon)
+      // Si negatif: admin dwe peye ajan diferans lan
+      const net = d.vente - d.gain;
       return {
-        agent:    `${a?.prenom||''} ${a?.nom||''}`.trim() || id,
-        username: a?.username || '—',
-        pct,
+        agent:      `${a?.prenom||''} ${a?.nom||''}`.trim() || id,
+        username:   a?.username || '—',
         ficheCount: d.ficheCount,
-        vente:    d.vente.toFixed(2),
-        gain:     d.gain.toFixed(2),
-        elimine:  d.elimine.toFixed(2),
-        komisyon: komisyon.toFixed(2),
-        net:      net.toFixed(2),
-        status:   net < 0 ? 'defisi' : net === 0 ? 'zero' : 'profit',
+        vente:      d.vente.toFixed(2),
+        gain:       d.gain.toFixed(2),
+        elimine:    d.elimine.toFixed(2),
+        net:        net.toFixed(2),
+        // Defisi: mise - gain = montant admin dwe peye ajan
+        // Profit: mise - gain = benefis bank
+        status: net < 0 ? 'defisi' : net === 0 ? 'zero' : 'profit',
       };
     }));
 
-    rows.sort((a,b) => parseFloat(a.net) - parseFloat(b.net)); // defisi anwo
+    rows.sort((a,b) => parseFloat(a.net) - parseFloat(b.net));
 
-    const totalVente   = rows.reduce((s,r) => s+parseFloat(r.vente),0);
-    const totalGain    = rows.reduce((s,r) => s+parseFloat(r.gain),0);
-    const totalKomisyon= rows.reduce((s,r) => s+parseFloat(r.komisyon),0);
-    const totalNet     = rows.reduce((s,r) => s+parseFloat(r.net),0);
+    const totalVente = rows.reduce((s,r) => s+parseFloat(r.vente), 0);
+    const totalGain  = rows.reduce((s,r) => s+parseFloat(r.gain),  0);
+    const totalNet   = rows.reduce((s,r) => s+parseFloat(r.net),   0);
 
-    res.json({ rows, totalVente: totalVente.toFixed(2), totalGain: totalGain.toFixed(2),
-      totalKomisyon: totalKomisyon.toFixed(2), totalNet: totalNet.toFixed(2) });
+    res.json({
+      rows,
+      totalVente: totalVente.toFixed(2),
+      totalGain:  totalGain.toFixed(2),
+      totalNet:   totalNet.toFixed(2),
+    });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
@@ -398,20 +401,60 @@ router.get('/partiel', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-// GET /api/rapport/tirage?debut=&fin=&tirage=  (ventes fin tirage)
+// GET /api/rapport/tirage?debut=&fin=&tirage=&agentId=
 router.get('/tirage', auth, async (req, res) => {
   try {
-    const { debut, fin, tirage, succursal } = req.query;
+    const { debut, fin, tirage, agentId } = req.query;
     let query = {};
     if (debut) query.dateVente = { $gte: new Date(debut) };
     if (fin)   query.dateVente = { ...(query.dateVente||{}), $lte: new Date(fin+'T23:59:59') };
     if (tirage && tirage !== 'Tout') query.tirage = tirage;
     const isAgent = req.user?.role === 'agent';
     if (isAgent) query.agentId = req.user.id;
+    else if (agentId && agentId !== 'Tout') query.agentId = agentId;
+
     const fiches = await db.fiches.find(query);
     const vente  = fiches.reduce((s,f) => s+(f.total||0), 0);
-    const ganyan = fiches.filter(f=>f.statut==='gagnant').reduce((s,f)=>s+(f.gainTotal||0),0);
-    res.json({ qtyPos: new Set(fiches.map(f=>f.posId)).size, qtyFacturable: fiches.length,
-      vente, ganyan, bilan: vente-ganyan, fiches: fiches.length });
+    const ganyan = fiches.filter(f=>f.statut==='gagnant')
+      .reduce((s,f)=>s+(f.gainTotal||f.montantGagne||0), 0);
+    const net    = vente - ganyan;
+
+    // Detay pa ajan
+    const agentMap = {};
+    for (const f of fiches) {
+      const k = f.agentId || 'inconnu';
+      if (!agentMap[k]) agentMap[k] = { ficheCount:0, vente:0, gain:0, fiches:[] };
+      agentMap[k].ficheCount++;
+      agentMap[k].vente += f.total||0;
+      if (f.statut==='gagnant') agentMap[k].gain += f.gainTotal||f.montantGagne||0;
+      agentMap[k].fiches.push({
+        ticket: f.ticket, tirage: f.tirage,
+        total: f.total||0, statut: f.statut,
+        dateVente: f.dateVente,
+      });
+    }
+
+    const agents = await Promise.all(Object.entries(agentMap).map(async ([id, d]) => {
+      const a = await db.agents.findOne({ _id: id }).catch(()=>null);
+      return {
+        _id:       id,
+        nom:       a?.nom||'', prenom: a?.prenom||'',
+        username:  a?.username||id,
+        succursale:a?.succursale||'—',
+        ficheCount:d.ficheCount,
+        vente:     d.vente,
+        gain:      d.gain,
+        net:       d.vente - d.gain,
+        fiches:    d.fiches.slice(0,50),
+      };
+    }));
+
+    agents.sort((a,b) => b.vente - a.vente);
+
+    res.json({
+      vente, ganyan, net, fiches: fiches.length,
+      qtyPos: new Set(fiches.map(f=>f.posId)).size,
+      agents,
+    });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
