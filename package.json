@@ -17,7 +17,7 @@
     "uuid": "^9.0.0",
     "ws": "8.18.0",
     "mongodb": "^6.3.0",
-    "nedb-promises": "^6.2.1"
+    "@seald-io/nedb": "^2.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
