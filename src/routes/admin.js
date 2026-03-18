@@ -411,6 +411,18 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+router.put('/resultats/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { tirage, date, lot1, lot2, lot3, loto3, loto4 } = req.body;
+    await db.resultats.update({ _id: req.params.id }, { $set: {
+      tirage, lot1, lot2: lot2||'', lot3: lot3||'',
+      loto3: loto3||'', loto4: loto4||'',
+      date: date ? new Date(date) : new Date(),
+    }});
+    res.json({ message: 'Rezilta modifye' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.delete('/resultats/:id', auth, adminOnly, async (req, res) => {
   try {
     await db.resultats.remove({ _id: req.params.id });
