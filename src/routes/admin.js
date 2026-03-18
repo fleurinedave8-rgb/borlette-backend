@@ -305,17 +305,18 @@ router.get('/resultats', auth, async (req, res) => {
 
 router.post('/resultats', auth, adminOnly, async (req, res) => {
   try {
-    const { tirage, date, lot1, lot2, lot3 } = req.body;
+    const { tirage, date, lot1, lot2, lot3, loto3, loto4 } = req.body;
     if (!tirage || !lot1) return res.status(400).json({ message: 'Tirage ak 1er lot obligatwa' });
 
     // Jwenn tiraj pa nom
     const tirageDoc = await db.tirages.findOne({ nom: tirage });
 
-    // Sove rezilta
+    // Sove rezilta — enkli loto3 (3 chif) ak loto4 (4 chif)
     const r = await db.resultats.insert({
       tirage, tirageId: tirageDoc?._id || null,
       date: date ? new Date(date) : new Date(),
       lot1, lot2: lot2||'', lot3: lot3||'',
+      loto3: loto3||'', loto4: loto4||'',
       createdAt: new Date()
     });
 
@@ -330,6 +331,25 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
         const primesList = await db.primes.find({});
         const primesMap  = {};
         for (const p of primesList) primesMap[p.type] = p;
+        // Mapping DB type → POS type pou kalkil
+        const DB_TO_POS = {
+          'Borlette':'P0','Loto 3':'P1','Mariage':'MAR',
+          'L4O1':'L41','L4O2':'L42','L4O3':'L43',
+          'Mariage Gratuit':'MG','Tet fich':'TF',
+          'Tet fich loto3':'TF2','Tet fich mariaj dwat':'TF3',
+          'Tet fich mariaj gauch':'TF4',
+        };
+        for (const [d,p] of Object.entries(DB_TO_POS)) {
+          if (primesMap[d] && !primesMap[p]) primesMap[p] = primesMap[d];
+        }
+        if (!primesMap['P2']) primesMap['P2'] = primesMap['P1'];
+        if (!primesMap['P3']) primesMap['P3'] = primesMap['P1'];
+        if (!primesMap['L4']) primesMap['L4'] = primesMap['L41']||primesMap['L42']||primesMap['L43']||{prime:'5000'};
+
+        const resultatKalkil = {
+          lot1, lot2: lot2||'', lot3: lot3||'',
+          loto3: loto3||'', loto4: loto4||''
+        };
 
         const fiches = await db.fiches.find({ tirageId: tirageDoc._id, statut: 'actif' });
 
@@ -338,7 +358,7 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
           let fichGagne = false, fichGain = 0;
 
           for (const row of rows) {
-            const kalkil = kalkilRow(row, { lot1, lot2: lot2||'', lot3: lot3||'' }, primesMap);
+            const kalkil = kalkilRow(row, resultatKalkil, primesMap);
             if (kalkil.gagne) {
               fichGagne = true;
               fichGain += kalkil.gain;
@@ -354,12 +374,7 @@ router.post('/resultats', auth, adminOnly, async (req, res) => {
                 lot1, lot2: lot2||'', lot3: lot3||'', resultatId: r._id }
             });
 
-            // Komisyon ajan
-            const agent = await db.agents.findOne({ _id: fiche.agentId });
-            if (agent) {
-              const comm = fiche.total * ((agent.agentPct || 10) / 100);
-              await db.agents.update({ _id: agent._id }, { $set: { balance: (agent.balance||0) + comm } });
-            }
+            // Pa gen komisyon — sèlman track gagnant
 
             totalGagnant++;
             totalGain += fichGain;

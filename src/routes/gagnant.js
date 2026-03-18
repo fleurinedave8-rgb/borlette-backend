@@ -86,11 +86,14 @@ function kalkilRow(row, resultat, primesMap) {
       return { gagne: false, gain: 0 };
     }
 
-    case 'P1': { // Loto3 P1 — 3 dènye chif lot1
-      const lot1_3d = String(resultat.lot1 || '').padStart(3, '0').slice(-3);
+    case 'P1': { // Loto3 P1 — match loto3 (3 chif) oswa 3 dènye chif lot1
+      // Si admin mete loto3 separe, itilize li. Sinon pran 3 dènye chif lot1
+      const ref3_1 = resultat.loto3
+        ? String(resultat.loto3).padStart(3,'0').slice(-3)
+        : String(resultat.lot1 || '').padStart(3, '0').slice(-3);
       const b3 = String(row.boule).padStart(3, '0').slice(-3);
-      if (b3 === lot1_3d) {
-        const pc = primesMap['P1'] || primesMap['loto3'] || primeConfig;
+      if (b3 === ref3_1) {
+        const pc = primesMap['P1'] || primesMap['Loto 3'] || primeConfig;
         const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P1 (${mult}x) — ${b3}` };
       }
@@ -98,10 +101,10 @@ function kalkilRow(row, resultat, primesMap) {
     }
 
     case 'P2': { // Loto3 P2 — 3 dènye chif lot2
-      const lot2_3d = String(resultat.lot2 || '').padStart(3, '0').slice(-3);
+      const ref3_2 = String(resultat.lot2 || '').padStart(3, '0').slice(-3);
       const b3 = String(row.boule).padStart(3, '0').slice(-3);
-      if (b3 === lot2_3d) {
-        const pc = primesMap['P2'] || primesMap['P1'] || primesMap['loto3'] || primeConfig;
+      if (b3 === ref3_2) {
+        const pc = primesMap['P2'] || primesMap['P1'] || primesMap['Loto 3'] || primeConfig;
         const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P2 (${mult}x) — ${b3}` };
       }
@@ -109,32 +112,29 @@ function kalkilRow(row, resultat, primesMap) {
     }
 
     case 'P3': { // Loto3 P3 — 3 dènye chif lot3
-      const lot3_3d = String(resultat.lot3 || '').padStart(3, '0').slice(-3);
+      const ref3_3 = String(resultat.lot3 || '').padStart(3, '0').slice(-3);
       const b3 = String(row.boule).padStart(3, '0').slice(-3);
-      if (b3 === lot3_3d) {
-        const pc = primesMap['P3'] || primesMap['P1'] || primesMap['loto3'] || primeConfig;
+      if (b3 === ref3_3) {
+        const pc = primesMap['P3'] || primesMap['P1'] || primesMap['Loto 3'] || primeConfig;
         const mult = parsePrime(pc.prime||pc.prime1||'500')[0]||500;
         return { gagne: true, gain: mise * mult, description: `Loto3 P3 (${mult}x) — ${b3}` };
       }
       return { gagne: false, gain: 0 };
     }
 
-    case 'L4': { // Loto4 — 4 chif nan 3 pozisyon diferan
+    case 'L4': { // Loto4 — 4 chif
       const b4 = String(row.boule).padStart(4, '0').slice(-4);
-      // Lotto.ht règ: 4 chif ka match nan pozisyon 2-5, 2-3+6-7, oswa 4-7
-      // lot gen 7 chif: d1 d2 d3 d4 d5 d6 d7
-      const lot7 = String(resultat.lot1 || '').padStart(7, '0');
-      const pos1 = lot7.slice(1, 5); // pozisyon 2-5  (x0123xx)
-      const pos2 = lot7.slice(1, 3) + lot7.slice(5, 7); // pozisyon 2-3+6-7 (x01xx23)
-      const pos3 = lot7.slice(3, 7); // pozisyon 4-7  (xxx0123)
-      // Si lot kout (2 chif sèlman), itilize kalkil senp: 4 dènye chif
-      const lot1_4d = String(resultat.lot1 || '').padStart(4, '0').slice(-4);
+      // Si admin mete loto4 separe, itilize li
+      // Sinon pran 4 dènye chif lot1
+      const ref4 = resultat.loto4
+        ? String(resultat.loto4).padStart(4,'0').slice(-4)
+        : String(resultat.lot1 || '').padStart(4, '0').slice(-4);
 
-      // Jwenn prime L4 — chèche L4, L41, L42, L43
-      const pc = primesMap['L4'] || primesMap['L41'] || primesMap['L42'] || primesMap['L43'] || primeConfig;
+      const pc = primesMap['L4'] || primesMap['L41'] || primesMap['L42'] ||
+                 primesMap['L43'] || primesMap['L4O1'] || primeConfig;
       const mult = parsePrime(pc.prime||pc.prime1||'5000')[0]||5000;
 
-      if (b4 === lot1_4d || b4 === pos1 || b4 === pos2 || b4 === pos3) {
+      if (b4 === ref4) {
         return { gagne: true, gain: mise * mult, description: `Loto4 (${mult}x) — ${b4}` };
       }
       return { gagne: false, gain: 0 };
@@ -212,7 +212,7 @@ function kalkilRow(row, resultat, primesMap) {
  */
 router.post('/calculer', auth, adminOnly, async (req, res) => {
   try {
-    const { tirageId, resultatId, lot1, lot2, lot3 } = req.body;
+    const { tirageId, resultatId, lot1, lot2, lot3, loto3, loto4 } = req.body;
     if (!tirageId || !lot1)
       return res.status(400).json({ message: 'tirageId ak lot1 obligatwa' });
 
@@ -253,7 +253,17 @@ router.post('/calculer', auth, adminOnly, async (req, res) => {
       primesMap['L4'] = primesMap['L41'] || primesMap['L42'] || primesMap['L43'];
     }
 
-    const resultat = { lot1, lot2: lot2||'', lot3: lot3||'' };
+    // resultat konplè:
+    // lot1, lot2, lot3 = 2 chif borlette (1er, 2em, 3em lot)
+    // loto3 = 3 chif (chif Loto3 separe si admin mete l)
+    // loto4 = 4 chif (si admin mete l)
+    const resultat = {
+      lot1,
+      lot2: lot2 || '',
+      lot3: lot3 || '',
+      loto3: loto3 || '',   // 3 chif Loto3 — si pa la, kalkil pran lot1 3 dènye chif
+      loto4: loto4 || '',   // 4 chif Loto4
+    };
 
     // Chaje tout fiches ACTIF pou tiraj sa a
     const fiches = await db.fiches.find({ tirageId, statut: 'actif' });
