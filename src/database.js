@@ -168,6 +168,7 @@ async function seedAdmin() {
   }
 }
 
-module.exports = { initDatabase, db: new Proxy({}, {
+const connectMongo = initDatabase; // alias pou kompatibilite
+module.exports = { initDatabase, connectMongo, db: new Proxy({}, {
   get: (_, key) => db[key]
 }) };
