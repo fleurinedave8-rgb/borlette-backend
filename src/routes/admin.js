@@ -550,18 +550,45 @@ router.get('/pos/message', auth, async (req, res) => {
 
 router.post('/pos', auth, adminOnly, async (req, res) => {
   try {
-    const { posId, nom, adresse, telephone, agentId, agentUsername, succursale, prime, agentPct, supPct, credit, prepaye, montantPrepaye, tete, messageAdmin } = req.body;
+    const { posId, nom, adresse, telephone, agentId, agentUsername,
+      succursale, prime, agentPct, supPct, credit, prepaye,
+      montantPrepaye, tete, messageAdmin, logo, newPassword } = req.body;
+
     if (!posId || !nom) return res.status(400).json({ message: 'POS ID ak non obligatwa' });
     const exists = await db.pos.findOne({ posId });
     if (exists) return res.status(400).json({ message: 'POS ID deja enregistre' });
+
+    // ── Kreye ajan otomatik si username bay epi pa egziste ──
+    let finalAgentId = agentId;
+    if (agentUsername) {
+      let agent = await db.agents.findOne({ username: agentUsername.toLowerCase() });
+      if (!agent) {
+        // Kreye ajan nouvo ak modpas defòlt oswa modpas bay
+        const defaultPass = newPassword || (posId + '123');
+        agent = await db.agents.insert({
+          nom: nom, prenom: '', username: agentUsername.toLowerCase(),
+          password: bcrypt.hashSync(defaultPass, 10),
+          role: 'agent', actif: true,
+          credit: credit || 'Illimité', balance: 0,
+          createdAt: new Date(),
+        });
+        console.log(`✅ Ajan kreye otomatik: ${agentUsername} / ${defaultPass}`);
+      } else if (newPassword) {
+        // Mete ajou modpas si bay
+        await db.agents.update({ _id: agent._id },
+          { $set: { password: bcrypt.hashSync(newPassword, 10) } });
+      }
+      finalAgentId = agent._id;
+    }
+
     const p = await db.pos.insert({
-      posId, nom, adresse, telephone, agentId, agentUsername,
-      succursale, prime: prime||'50|20|10',
-      agentPct: agentPct||0, supPct: supPct||0,
-      credit: credit||'Illimité',
-      prepaye: prepaye||false,
-      montantPrepaye: montantPrepaye||0,
-      // Tete fich pou enpresyon (ligne1-4)
+      posId, nom, adresse, telephone,
+      agentId: finalAgentId, agentUsername,
+      succursale, prime: prime || '50|20|10',
+      agentPct: agentPct || 0, supPct: supPct || 0,
+      credit: credit || 'Illimité',
+      prepaye: prepaye || false,
+      montantPrepaye: montantPrepaye || 0,
       tete: tete || {
         ligne1: nom || 'LA-PROBITE-BORLETTE',
         ligne2: adresse || '',
@@ -569,16 +596,48 @@ router.post('/pos', auth, adminOnly, async (req, res) => {
         ligne4: 'Fich sa valid pou 90 jou',
       },
       messageAdmin: messageAdmin || '',
+      logo: logo || '',
       actif: true, online: false,
       createdAt: new Date(),
-    
-        logo: req.body.logo || '',});
-    res.json(p);
+    });
+
+    res.json({ ...p,
+      agentInfo: agentUsername
+        ? `Ajan ${agentUsername} kreye/mete ajou`
+        : 'Pa gen ajan' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
 router.put('/pos/:id', auth, adminOnly, async (req, res) => {
   try {
+    const { agentUsername, newPassword, ...posData } = req.body;
+
+    // Mete ajou modpas ajan si bay
+    if (agentUsername && newPassword) {
+      const agent = await db.agents.findOne({ username: agentUsername.toLowerCase() });
+      if (agent) {
+        await db.agents.update({ _id: agent._id },
+          { $set: { password: bcrypt.hashSync(newPassword, 10) } });
+      }
+    }
+
+    // Kreye ajan si pa egziste
+    if (agentUsername) {
+      const existing = await db.agents.findOne({ username: agentUsername.toLowerCase() });
+      if (!existing) {
+        const pos = await db.pos.findOne({ _id: req.params.id });
+        const defaultPass = newPassword || ((pos?.posId || 'pos') + '123');
+        await db.agents.insert({
+          nom: posData.nom || agentUsername, prenom: '',
+          username: agentUsername.toLowerCase(),
+          password: bcrypt.hashSync(defaultPass, 10),
+          role: 'agent', actif: true,
+          credit: posData.credit || 'Illimité', balance: 0,
+          createdAt: new Date(),
+        });
+      }
+    }
+
     await db.pos.update({ _id: req.params.id }, { $set: req.body });
     res.json({ message: 'POS mis à jour' });
   } catch (err) { res.status(500).json({ message: err.message }); }

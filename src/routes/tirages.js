@@ -22,7 +22,11 @@ router.get('/', async (req, res) => {
 // POST /api/tirages
 router.post('/', auth, async (req, res) => {
   try {
-    const t = await db.tirages.insert({ ...req.body, createdAt: new Date() });
+    const t = await db.tirages.insert({
+      actif: true,   // defòlt toujou aktif
+      ...req.body,
+      createdAt: new Date()
+    });
     res.json(t);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
@@ -49,7 +53,7 @@ module.exports = router;
 router.put('/:id/ouvri', auth, async (req, res) => {
   try {
     await db.tirages.update({ _id: req.params.id }, {
-      $set: { ouvertManyel: true, ferméManyel: false, dernyeAksyon: new Date(), aksyonPar: req.user.username }
+      $set: { actif: true, ouvertManyel: true, ferméManyel: false, dernyeAksyon: new Date(), aksyonPar: req.user.username }
     });
     res.json({ ok: true, message: 'Tiraj ouvri' });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -59,7 +63,7 @@ router.put('/:id/ouvri', auth, async (req, res) => {
 router.put('/:id/femen', auth, async (req, res) => {
   try {
     await db.tirages.update({ _id: req.params.id }, {
-      $set: { ouvertManyel: false, ferméManyel: true, dernyeAksyon: new Date(), aksyonPar: req.user.username }
+      $set: { actif: false, ouvertManyel: false, ferméManyel: true, dernyeAksyon: new Date(), aksyonPar: req.user.username }
     });
     res.json({ ok: true, message: 'Tiraj fèmen' });
   } catch (err) { res.status(500).json({ message: err.message }); }
