@@ -485,6 +485,13 @@ router.post('/boules-bloquees', auth, adminOnly, async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+router.put('/boules-bloquees/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await db.boules.update({ _id: req.params.id }, { $set: req.body });
+    res.json({ message: 'Boule modifye' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 router.delete('/boules-bloquees/:id', auth, adminOnly, async (req, res) => {
   try {
     await db.boules.remove({ _id: req.params.id });
