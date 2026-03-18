@@ -124,4 +124,26 @@ router.post('/register', async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+
+// POST /api/auth/setup — Kreye admin si pa gen youn
+router.post('/setup', async (req, res) => {
+  try {
+    const existing = await db.agents.findOne({ role: 'admin' });
+    if (existing) {
+      return res.status(400).json({ message: 'Admin deja egziste' });
+    }
+    const admin = await db.agents.insert({
+      nom: 'Admin', prenom: 'Super',
+      username: 'admin',
+      password: require('bcryptjs').hashSync('admin123', 10),
+      role: 'admin',
+      actif: true,
+      credit: 'Illimité',
+      balance: 0,
+      createdAt: new Date(),
+    });
+    res.json({ message: 'Admin kreye!', username: 'admin', password: 'admin123' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 module.exports = router;
