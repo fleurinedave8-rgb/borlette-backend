@@ -39,6 +39,8 @@ const db = {
   transactions:mkDb('transactions'),
   succursales: mkDb('succursales'),
   doleances:   mkDb('doleances'),
+  limites:     mkDb('limites'),
+  settings:    mkDb('settings'),
 };
 
 async function connectMongo() {
